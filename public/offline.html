@@ -4,14 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Offline · ListNear</title>
+  <meta name="theme-color" content="#0b6bcb">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
   <main class="container" style="display:grid;place-items:center;min-height:80vh;text-align:center;">
-    <div class="card card-pad" style="max-width:40ch;">
+    <div class="card card-pad" style="max-width:42ch;">
+      <span class="brand-mark" style="width:56px;height:56px;font-size:1.4rem;margin:0 auto var(--space-4);" aria-hidden="true">LN</span>
       <h1>You're offline</h1>
-      <p class="muted">Check your connection and try again. Listings need a live connection to stay fresh.</p>
-      <button class="btn btn-primary" onclick="location.reload()">Retry</button>
+      <p class="muted">Check your connection and try again. ListNear needs a live connection to show the latest listings near you.</p>
+      <button class="btn btn-primary" type="button" onclick="location.reload()">Retry</button>
     </div>
   </main>
 </body>

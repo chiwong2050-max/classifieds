@@ -1,7 +1,7 @@
 /* ListNear service worker - app shell + offline home page.
    We deliberately keep caching minimal: only static shell assets and the home
    page are cached, so listings and search results are always fresh. */
-const CACHE = 'listnear-shell-v1';
+const CACHE = 'listnear-shell-v2';
 const SHELL = [
   '/css/styles.css',
   '/js/app.js',

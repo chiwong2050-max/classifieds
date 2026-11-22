@@ -13,6 +13,7 @@ const { localsMiddleware } = require('./middleware/locals');
 const { browseLimiter } = require('./middleware/rateLimit');
 const { ensureUploadDir } = require('./services/images');
 const { expireDueAds, pruneExpiredTokens } = require('./db/ads');
+const SqliteSessionStore = require('./db/sessionStore');
 
 const app = express();
 
@@ -52,6 +53,8 @@ app.use(
   session({
     name: 'listnear.sid',
     secret: config.session.secret,
+    // Persistent store so logins survive restarts (see src/db/sessionStore.js).
+    store: new SqliteSessionStore(),
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -121,6 +124,8 @@ function runMaintenance() {
     const expired = expireDueAds();
     if (expired) console.log(`[maintenance] expired ${expired} ad(s)`);
     pruneExpiredTokens();
+    const stale = SqliteSessionStore.pruneExpired();
+    if (stale) console.log(`[maintenance] pruned ${stale} stale session(s)`);
   } catch (err) {
     console.warn('[maintenance] failed:', err.message);
   }

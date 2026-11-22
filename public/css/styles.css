@@ -145,6 +145,7 @@ main { flex: 1 0 auto; padding: var(--space-5) 0 var(--space-7); }
   width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto;
   background: linear-gradient(135deg, var(--brand), var(--accent));
   display: grid; place-items: center; color: #fff; font-weight: 800;
+  font-size: 0.95rem; letter-spacing: -0.02em; line-height: 1;
 }
 .header-nav { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
 .header-nav a.navlink { color: var(--text-muted); font-weight: 600; padding: 8px 10px; border-radius: var(--radius-sm); }

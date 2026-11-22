@@ -6,8 +6,9 @@
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="14" fill="url(#g)"/>
-  <g fill="#ffffff">
-    <rect x="23" y="14" width="9" height="36" rx="1.5"/>
-    <rect x="23" y="41" width="22" height="9" rx="1.5"/>
+  <!-- Simple "LN" monogram -->
+  <g fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M15 17 V45 H31"/>
+    <path d="M39 45 V17 L53 45 V17"/>
   </g>
 </svg>

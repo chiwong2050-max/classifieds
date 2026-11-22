@@ -1,7 +1,7 @@
 {
   "name": "ListNear",
   "short_name": "ListNear",
-  "description": "Buy, sell, jobs, services and more near you. A family-safe local marketplace.",
+  "description": "Free local classifieds - buy, sell and connect near you",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
