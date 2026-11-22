@@ -3,6 +3,7 @@
 const config = require('../config');
 const ads = require('../db/ads');
 const { adUrl, absolute } = require('../utils/urls');
+const { t } = require('../config/i18n');
 
 module.exports = function manageRoutes(app) {
   // --- Manage / renew an ad via its private token ---------------------------
@@ -10,15 +11,15 @@ module.exports = function manageRoutes(app) {
     const ad = ads.getByManageToken(req.params.token);
     if (!ad) {
       return res.status(404).render('pages/error', {
-        title: 'Link not found',
+        title: t('manage.notFoundTitle'),
         status: 404,
-        message: 'This manage link is not valid. Please check the link in your email.',
+        message: t('manage.notFoundBody'),
       });
     }
 
     res.render('pages/manage', {
-      title: `Manage your ad`,
-      metaDescription: 'Manage or renew your ad.',
+      title: t('manage.title'),
+      metaDescription: t('manage.metaDescription'),
       canonical: `${config.site.url}/manage/${req.params.token}`,
       robots: 'noindex,nofollow',
       ad,
@@ -34,9 +35,9 @@ module.exports = function manageRoutes(app) {
     const renewed = ads.renewAd(req.params.token);
     if (!renewed) {
       return res.status(404).render('pages/error', {
-        title: 'Link not found',
+        title: t('manage.notFoundTitle'),
         status: 404,
-        message: 'This manage link is not valid.',
+        message: t('manage.invalidBody'),
       });
     }
     return res.redirect(`/manage/${req.params.token}?renewed=ok`);

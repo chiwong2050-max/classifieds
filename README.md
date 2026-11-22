@@ -11,6 +11,9 @@ generalists while keeping the experience clean, fast and trustworthy.
   filter auto-flags spam, adult, gambling/casino, weapons and drugs.
 - **No personals / dating / adult categories at all.** Not a toggle — the
   category set simply doesn't contain them.
+- **Multi-market engine** — one codebase runs several independent sites (e.g.
+  an Australian site and a US site) on different domains, each with its own
+  branding, currency, locale, date/units format and database.
 
 The product name is a placeholder and is configurable via `SITE_NAME`.
 
@@ -68,6 +71,54 @@ No React. No client-side framework. Pages are just HTML.
 
 ---
 
+## Multi-market sites
+
+The same codebase can run as several separate classifieds sites — for example a
+US site and an Australian site — on different domains, each with its own
+database and its own wording.
+
+A **market** is a small JSON file in [`src/config/sites/`](src/config/sites)
+(`au.json`, `us.json`, …) that defines:
+
+| Field | Example | Purpose |
+| ----- | ------- | ------- |
+| `key` | `au` | Market identifier. |
+| `name` / `tagline` | `Classifieds Australia` | Branding shown across the UI. |
+| `country` / `countryName` | `au` / `Australia` | Country slug used in URLs (`/au/...`) and location data. |
+| `currency` | `AUD` | Default currency for new ads. |
+| `locale` / `language` | `en-AU` / `en` | Locale file selection and date/price formatting. |
+| `dateFormat` | `D MMM YYYY` | Date pattern (`D MMM YYYY` vs `MMM D, YYYY`). |
+| `units` | `metric` | Measurement system: `metric` (km) or `imperial` (mi). |
+| `url` | `https://example.com` | Public base URL (canonicals, links, sitemap). |
+| `database` | `data/au.sqlite` | Per-market SQLite file. |
+| `supportUrl` / `emergencyNumber` | — | Footer support link and the safety page's emergency number. |
+| `regions` | `{ vic: { name, cities: [...] } }` | Seeded `region > city` hierarchy for that market. |
+
+**Run a market** by selecting it at start-up:
+
+```bash
+SITE=au npm start        # Australian site, data/au.sqlite
+SITE=us npm start        # US site, data/us.sqlite
+```
+
+- Point `SITE_CONFIG` at any path to load a custom market file instead of a
+  built-in one.
+- Every value can be overridden with environment variables (`SITE_NAME`,
+  `SITE_CURRENCY`, `SITE_URL`, `DB_PATH`, `SITE_LOCALE`, …), so the same build
+  serves different domains with separate databases and no code changes.
+- Deploy each market as its own process/container with its own `SITE` (or
+  `SITE_CONFIG`), `SITE_URL`, `DB_PATH` and volume.
+
+**UI text lives in locale files** under [`locales/`](locales): `en.json` is the
+base language dictionary and is merged with the market's locale overrides
+(`en-AU.json`, `en-US.json`). Views and routes only ever reference keys
+(`t('nav.postAd')`) — there is no hard-coded English in the templates, so a
+market can be re-worded without touching code. Categories stay family-safe in
+every market: the category set contains **no personals / dating / adult**
+options.
+
+---
+
 ## Getting started
 
 ### Prerequisites
@@ -113,10 +164,19 @@ The app boots with safe defaults and **zero config** for local development.
 
 | Variable | Purpose | Default |
 | -------- | ------- | ------- |
-| `SITE_NAME` | Product name shown across the UI. | `Classifieds` |
-| `SITE_TAGLINE` | Short tagline for the home page. | `Buy, sell and connect locally` |
+| `SITE` | Which market to run (a file in `src/config/sites/<key>.json`). | `au` |
+| `SITE_CONFIG` | Path to a custom market JSON file (overrides `SITE`). | unset |
+| `SITE_NAME` | Product name shown across the UI. | market file |
+| `SITE_TAGLINE` | Short tagline for the home page. | market file |
 | `SITE_URL` | Public base URL (canonicals, magic links, sitemap). | `http://localhost:3000` |
-| `DEFAULT_COUNTRY` | Default country slug. | `au` |
+| `SITE_COUNTRY` | Two-letter country slug used in URLs (`/au/...`). | market file |
+| `SITE_COUNTRY_NAME` | Country display name (meta/policy text). | market file |
+| `SITE_CURRENCY` | Default currency for new ads (ISO 4217). | market file |
+| `SITE_LOCALE` | Locale for date/price formatting and locale-file overrides. | market file |
+| `SITE_LANGUAGE` | Base language dictionary (`locales/<lang>.json`). | `en` |
+| `SITE_DATE_FORMAT` | Date pattern, e.g. `D MMM YYYY` or `MMM D, YYYY`. | market file |
+| `SITE_UNITS` | `metric` (km) or `imperial` (mi). | market file |
+| `DB_PATH` | Per-market SQLite file. | market file |
 | `PORT` | HTTP port. | `3000` |
 | `NODE_ENV` | `development` or `production`. | `development` |
 | `SESSION_SECRET` | Signs session cookies. **Change in production.** | dev fallback |
@@ -128,7 +188,8 @@ The app boots with safe defaults and **zero config** for local development.
 | `MAX_IMAGES_PER_AD` | Max images per ad. | `6` |
 | `AD_EXPIRY_DAYS` | Days before an ad expires. | `30` |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile keys. Leave blank to disable. | blank |
-| `BUYMEACOFFEE_URL` | Footer support link. | `https://buymeacoffee.com/aussieloo?ref=classifieds` |
+| `EMERGENCY_NUMBER` | Emergency number shown on the safety page. | market file |
+| `SUPPORT_URL` | Footer support link. | market file |
 
 > **Secrets:** `.env` is git-ignored. Never commit real secrets. Only
 > `.env.example` (placeholders) is tracked.
@@ -140,13 +201,14 @@ The app boots with safe defaults and **zero config** for local development.
 ```
 classifieds/
 ├─ src/
-│  ├─ config/            # Categories, locations (country>state>city), banned keywords, env config
+│  ├─ config/            # Env config, i18n, categories, locations, sites/<key>.json markets
 │  ├─ db/                # Connection, schema.sql, ads repository, seed + reset scripts
 │  ├─ middleware/        # Locals, rate limits, Turnstile, admin auth, uploads
 │  ├─ routes/            # pages, post, ads, manage, admin, seo, listings
 │  ├─ services/          # mailer, images (sharp -> WebP), moderation
 │  ├─ utils/             # helpers, url builders, JSON-LD builders
 │  └─ server.js          # App entrypoint: security, sessions, routes, maintenance
+├─ locales/              # UI text: en.json (base) + en-AU.json / en-US.json (market overrides)
 ├─ views/                # EJS templates (partials + pages, incl. admin)
 ├─ public/               # CSS, vanilla JS, icons, manifest, service worker, uploads
 ├─ .env.example
@@ -215,6 +277,20 @@ Railway, Fly.io, or a small VPS):
 
 > For a single-container/small-VPS setup, mount a volume for `data/` and
 > `public/uploads/` so the database and images survive restarts.
+
+### Running several markets
+
+To serve multiple markets (e.g. an AU and a US site), deploy **one instance per
+market** and give each its own branding, domain, database and storage:
+
+| Instance | `SITE` | `SITE_URL` | `DB_PATH` |
+| -------- | ------ | ---------- | --------- |
+| AU site  | `au`   | `https://example.com.au` | `data/au.sqlite` |
+| US site  | `us`   | `https://example.com`    | `data/us.sqlite` |
+
+Each instance needs its own `data/` and `public/uploads/` volume. Custom markets
+can be added by dropping a JSON file in `src/config/sites/` (or pointing
+`SITE_CONFIG` at one) — the code itself never changes.
 
 ---
 

@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const config = require('../config');
+const { t, tp } = require('../config/i18n');
 
 const ID_ALPHABET = '23456789abcdefghijkmnpqrstuvwxyz'; // no 0/1/l/o ambiguity
 
@@ -48,11 +49,13 @@ function currencySymbol(currency) {
 
 /** Human-friendly price label, e.g. "$1,250" / "Free" / "Contact for price". */
 function formatPrice(cents, currency, priceType = 'fixed') {
-  if (priceType === 'free') return 'Free';
-  if (priceType === 'contact' || cents === null || cents === undefined) return 'Contact for price';
-  const value = (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  // Labels come from the market's locale file so each site reads naturally.
+  if (priceType === 'free') return t('price.free');
+  if (priceType === 'contact' || cents === null || cents === undefined) return t('price.contact');
+  // Use the market locale so thousands separators match local convention.
+  const value = (cents / 100).toLocaleString(config.site.locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   const label = `${currencySymbol(currency)}${value}`;
-  return priceType === 'negotiable' ? `${label} (negotiable)` : label;
+  return priceType === 'negotiable' ? t('price.negotiable', { price: label }) : label;
 }
 
 /** ISO timestamp N days from now (UTC, sqlite-friendly 'YYYY-MM-DD HH:MM:SS'). */
@@ -65,27 +68,29 @@ function sqliteNow() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
 }
 
-/** Coarse relative time, e.g. "3 days ago". */
+/** Coarse, localized relative time, e.g. "3 days ago". */
 function timeAgo(sqliteDate) {
   if (!sqliteDate) return '';
   const then = new Date(`${sqliteDate.replace(' ', 'T')}Z`).getTime();
   const diff = Date.now() - then;
   const mins = Math.round(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1) return t('time.justNow');
+  if (mins < 60) return t('time.minutesAgo', { count: mins });
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} hr ago`;
+  if (hours < 24) return t('time.hoursAgo', { count: hours });
   const days = Math.round(hours / 24);
-  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+  if (days < 30) return tp('time.daysAgo', days);
   const months = Math.round(days / 30);
-  return `${months} month${months === 1 ? '' : 's'} ago`;
+  return tp('time.monthsAgo', months);
 }
 
-/** Format a sqlite date as a friendly date (e.g. "22 Nov 2026"). */
-function formatDate(sqliteDate) {
-  if (!sqliteDate) return '';
-  const d = new Date(`${sqliteDate.replace(' ', 'T')}Z`);
-  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+/** Format a date using the market's date pattern (e.g. "22 Nov 2026"). */
+function formatDate(value) {
+  if (!value) return '';
+  // Accept either a sqlite 'YYYY-MM-DD HH:MM:SS' string or a Date instance.
+  const d = value instanceof Date ? value : new Date(`${String(value).replace(' ', 'T')}Z`);
+  // Token formatter driven by config.site.dateFormat (D MMM YYYY vs MMM D, YYYY).
+  return config.formatDateTokens(d, config.site.dateFormat);
 }
 
 function truncate(text, max = 160) {

@@ -1,6 +1,7 @@
 'use strict';
 
 const rateLimit = require('express-rate-limit');
+const { t } = require('../config/i18n');
 
 /**
  * Rate limiters. Limits are intentionally generous for browsing (SEO crawlers
@@ -16,7 +17,7 @@ const browseLimiter = rateLimit({
   max: 240,
   standardHeaders: true,
   legacyHeaders: false,
-  message: jsonMessage('Too many requests. Please slow down.'),
+  message: jsonMessage(t('limits.browse')),
 });
 
 // Posting an ad (form submit + magic-link request).
@@ -25,7 +26,7 @@ const postLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: jsonMessage('You have reached the posting limit. Please try again later.'),
+  message: jsonMessage(t('limits.post')),
 });
 
 // Contact relay + report submissions.
@@ -34,7 +35,7 @@ const actionLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: jsonMessage('Too many submissions. Please try again shortly.'),
+  message: jsonMessage(t('limits.action')),
 });
 
 // Admin login (brute-force protection).
@@ -44,7 +45,7 @@ const adminLoginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  message: 'Too many login attempts. Please try again later.',
+  message: t('limits.adminLogin'),
 });
 
 module.exports = { browseLimiter, postLimiter, actionLimiter, adminLoginLimiter };

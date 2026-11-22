@@ -1,6 +1,7 @@
 'use strict';
 
 const { scan } = require('../config/keywords');
+const { t } = require('../config/i18n');
 
 /**
  * Run moderation over an ad submission.
@@ -27,7 +28,7 @@ function moderateAd(ad) {
   if (ad.category === 'pets') {
     const liveSale = /\b(for sale|sell(ing)? (my|our)|puppies for sale|kittens for sale|breeder)\b/i.test(haystack);
     if (liveSale && !reasons.length) {
-      reasons.push({ category: 'restricted_species', severity: 'flag', term: 'possible live-animal sale' });
+      reasons.push({ category: 'restricted_species', severity: 'flag', term: t('moderation.liveAnimalSale') });
     }
   }
 

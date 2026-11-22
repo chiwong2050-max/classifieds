@@ -1,22 +1,22 @@
 <%- include('../partials/head') %>
 <div class="container mt-6">
   <div class="card card-pad prose" style="max-width:62ch;margin:0 auto;">
-    <h1>Thanks &mdash; your ad is in the queue</h1>
-    <p>Your ad has been submitted and is now awaiting review. Most ads are checked within a few hours. You'll get an email as soon as it's live.</p>
+    <h1><%= t('postSuccess.title') %></h1>
+    <p><%= t('postSuccess.body') %></p>
 
     <% if (isFlagged) { %>
-      <div class="alert alert-warn">Our automated checks flagged a word in your ad, so it will get closer attention from a moderator. If everything is fine, it will be approved as normal.</div>
+      <div class="alert alert-warn"><%= t('postSuccess.flagged') %></div>
     <% } %>
 
     <div class="alert alert-info">
-      <strong>Keep this link</strong> to manage or renew your ad later:<br>
+      <strong><%= t('postSuccess.keepLink') %></strong><br>
       <a href="/manage/<%= manageToken %>"><%= site.url %>/manage/<%= manageToken %></a>
     </div>
 
-    <p class="muted small">Your email stays private. Buyers reach you through a relay form.</p>
+    <p class="muted small"><%= t('postSuccess.emailPrivate') %></p>
     <div class="row">
-      <a class="btn btn-outline" href="/">Back to home</a>
-      <a class="btn btn-primary" href="/post/">Post another ad</a>
+      <a class="btn btn-outline" href="/"><%= t('postSuccess.backHome') %></a>
+      <a class="btn btn-primary" href="/post/"><%= t('postSuccess.postAnother') %></a>
     </div>
   </div>
 </div>

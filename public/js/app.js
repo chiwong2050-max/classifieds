@@ -37,11 +37,11 @@
         } else if (navigator.clipboard) {
           navigator.clipboard.writeText(url).then(function () {
             var original = btn.textContent;
-            btn.textContent = 'Link copied';
+            btn.textContent = btn.dataset.copiedLabel || 'Link copied';
             setTimeout(function () { btn.textContent = original; }, 1800);
           });
         } else {
-          window.prompt('Copy this link', url);
+          window.prompt(btn.dataset.promptLabel || 'Copy this link', url);
         }
       });
     });
@@ -54,7 +54,9 @@
     if (!input || !out) return;
     input.addEventListener('change', function () {
       var n = input.files ? input.files.length : 0;
-      out.textContent = n ? n + ' photo' + (n === 1 ? '' : 's') + ' selected' : '';
+      if (!n) { out.textContent = ''; return; }
+      var pattern = n === 1 ? input.dataset.countOne : input.dataset.countOther;
+      out.textContent = pattern ? pattern.replace('{count}', n) : '';
     });
   }
 
@@ -87,6 +89,8 @@
     var citySel = document.querySelector('[data-city]');
     if (!countrySel || !stateSel || !citySel) return;
 
+    var chooseLabel = stateSel.dataset.chooseLabel || 'Choose…';
+
     var desired = {
       country: countrySel.value,
       state: stateSel.dataset.value || stateSel.value,
@@ -98,20 +102,20 @@
       .then(function (data) {
         function fillStates() {
           var country = data[countrySel.value];
-          stateSel.innerHTML = '<option value="">Choose…</option>';
+          stateSel.innerHTML = '<option value="">' + chooseLabel + '</option>';
           if (!country) return;
-          Object.keys(country.states).forEach(function (slug) {
+          Object.keys(country.regions).forEach(function (slug) {
             var opt = document.createElement('option');
             opt.value = slug;
-            opt.textContent = country.states[slug].name;
+            opt.textContent = country.regions[slug].name;
             stateSel.appendChild(opt);
           });
           if (desired.state) stateSel.value = desired.state;
         }
         function fillCities() {
           var country = data[countrySel.value];
-          var state = country && country.states[stateSel.value];
-          citySel.innerHTML = '<option value="">Choose…</option>';
+          var state = country && country.regions[stateSel.value];
+          citySel.innerHTML = '<option value="">' + chooseLabel + '</option>';
           if (!state) return;
           state.cities.forEach(function (name) {
             var opt = document.createElement('option');

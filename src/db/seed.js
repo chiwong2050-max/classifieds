@@ -19,7 +19,7 @@ const config = require('../config');
 const db = require('./index');
 const ads = require('./ads');
 const { shortId, randomToken, sqliteNow, sqliteNowPlusDays } = require('../utils/helpers');
-const { getCity } = require('../config/locations');
+const { getCity, slugify } = require('../config/locations');
 
 const SAMPLES = [
   {
@@ -27,7 +27,7 @@ const SAMPLES = [
     description:
       'Classic steel-frame road bike in great condition. New tyres and brake pads fitted last month. Rides smoothly, ideal for commuting or weekend rides. Pick-up only, happy to answer any questions.',
     category: 'for-sale',
-    country: 'au', state: 'vic', city: 'melbourne',
+    loc: 0,
     price: 320, price_type: 'negotiable',
     attrs: { condition: 'Good' },
     contact_name: 'Sample Seller',
@@ -39,7 +39,7 @@ const SAMPLES = [
     description:
       'Reliable and economical hatchback with full service history and logbooks. Two owners from new, regularly serviced, new battery. Registered and ready to go. Inspections welcome.',
     category: 'vehicles',
-    country: 'au', state: 'nsw', city: 'sydney',
+    loc: 1,
     price: 12500, price_type: 'fixed',
     attrs: { make: 'Sample Motors', model: 'Compact', year: '2016', odometer: '78000' },
     contact_name: 'Sample Dealer',
@@ -51,7 +51,7 @@ const SAMPLES = [
     description:
       'Bright two-bedroom unit a short walk from the train station and shops. Freshly painted, built-in robes and a sunny balcony. Available now, inspections by appointment.',
     category: 'property-rentals',
-    country: 'au', state: 'qld', city: 'brisbane',
+    loc: 2,
     price: 520, price_type: 'fixed',
     attrs: { bedrooms: '2', bathrooms: '1' },
     contact_name: 'Sample Agent',
@@ -63,7 +63,7 @@ const SAMPLES = [
     description:
       'Local gardening service covering mowing, edging, weeding and hedge trimming. Fully insured, own equipment, friendly service. Free quotes for regular or one-off jobs.',
     category: 'services',
-    country: 'au', state: 'wa', city: 'perth',
+    loc: 3,
     price: 60, price_type: 'contact',
     attrs: {},
     contact_name: 'Sample Gardener',
@@ -75,7 +75,7 @@ const SAMPLES = [
     description:
       'Busy neighbourhood cafe looking for a friendly casual team member. Barista experience a bonus but full training provided. Weekend availability essential. Great team, flexible hours.',
     category: 'jobs',
-    country: 'au', state: 'sa', city: 'adelaide',
+    loc: 4,
     price: null, price_type: 'contact',
     attrs: { job_type: 'Casual', salary: '$30 per hour' },
     contact_name: 'Sample Cafe',
@@ -87,7 +87,7 @@ const SAMPLES = [
     description:
       'Neighbourhood garage sale this Saturday from 8am. Household items, books, toys and furniture. Everything priced to go. Come along and say hello - cash only, please.',
     category: 'community',
-    country: 'au', state: 'tas', city: 'hobart',
+    loc: 5,
     price: null, price_type: 'free',
     attrs: {},
     contact_name: 'Sample Neighbour',
@@ -95,6 +95,19 @@ const SAMPLES = [
     colors: ['#b26a00', '#128a4b'],
   },
 ];
+
+/** Ordered [stateSlug, region] pairs for the active market. */
+const REGIONS = Object.entries(config.site.regions);
+
+/**
+ * Resolve a sample's `loc` index to a concrete country/state/city for the
+ * active market. Any market with at least one region works; samples wrap
+ * around when there are fewer regions than samples.
+ */
+function locationFor(index) {
+  const [state, region] = REGIONS[index % REGIONS.length];
+  return { country: config.site.country, state, city: slugify(region.cities[0]) };
+}
 
 /** Build a simple horizontal-gradient WebP (no SVG, so no font dependencies). */
 async function makeImage(name, [c1, c2], width = 1200, height = 900) {
@@ -129,20 +142,21 @@ async function seed() {
     console.log(`Removed ${existing.length} previous sample ad(s).`);
   }
 
-  for (const s of SAMPLES) {
+  for (const [i, s] of SAMPLES.entries()) {
+    const loc = locationFor(i);
     const created = ads.createAd({
       public_id: shortId(),
       slug: `${s.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 55)}-${shortId(4)}`,
       title: s.title,
       description: s.description,
       category: s.category,
-      country: s.country,
-      state: s.state,
-      city: s.city,
-      city_name: getCity(s.country, s.state, s.city).name,
+      country: loc.country,
+      state: loc.state,
+      city: loc.city,
+      city_name: getCity(loc.country, loc.state, loc.city).name,
       price_cents: s.price ? Math.round(s.price * 100) : null,
       price_type: s.price_type,
-      currency: 'AUD',
+      currency: config.site.currency,
       attrs: s.attrs,
       contact_name: s.contact_name,
       contact_email: s.contact_email,

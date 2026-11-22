@@ -1,7 +1,7 @@
 <% if (turnstileEnabled && turnstileSiteKey) { %>
   <div class="field">
     <div class="cf-turnstile" data-sitekey="<%= turnstileSiteKey %>" data-theme="auto"></div>
-    <p class="hint">Protected by Cloudflare Turnstile.</p>
+    <p class="hint"><%= t('turnstile.hint') %></p>
   </div>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <% } %>

@@ -1,7 +1,7 @@
 <% if (totalPages > 1) { %>
-<nav class="pagination" aria-label="Pagination">
+<nav class="pagination" aria-label="<%= t('pagination.aria') %>">
   <% if (page > 1) { %>
-    <a href="<%= baseUrl + urls.withQuery(query, { page: page - 1 }) %>" rel="prev">‹ Prev</a>
+    <a href="<%= baseUrl + urls.withQuery(query, { page: page - 1 }) %>" rel="prev"><%= t('pagination.prev') %></a>
   <% } %>
   <% for (let p = 1; p <= totalPages; p += 1) { %>
     <% if (p === 1 || p === totalPages || Math.abs(p - page) <= 2) { %>
@@ -15,7 +15,7 @@
     <% } %>
   <% } %>
   <% if (page < totalPages) { %>
-    <a href="<%= baseUrl + urls.withQuery(query, { page: page + 1 }) %>" rel="next">Next ›</a>
+    <a href="<%= baseUrl + urls.withQuery(query, { page: page + 1 }) %>" rel="next"><%= t('pagination.next') %></a>
   <% } %>
 </nav>
 <% } %>

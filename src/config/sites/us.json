@@ -1,0 +1,24 @@
+{
+  "key": "us",
+  "name": "Classifieds USA",
+  "tagline": "Buy, sell and connect in your community",
+  "country": "us",
+  "countryName": "United States",
+  "currency": "USD",
+  "locale": "en-US",
+  "language": "en",
+  "dateFormat": "MMM D, YYYY",
+  "units": "imperial",
+  "url": "http://localhost:3000",
+  "database": "data/us.sqlite",
+  "supportUrl": "https://buymeacoffee.com/aussieloo?ref=classifieds",
+  "emergencyNumber": "911",
+  "regions": {
+    "ca": { "name": "California", "cities": ["Los Angeles", "San Francisco", "San Diego", "Sacramento", "San Jose"] },
+    "ny": { "name": "New York", "cities": ["New York City", "Buffalo", "Rochester", "Albany", "Syracuse"] },
+    "tx": { "name": "Texas", "cities": ["Houston", "Dallas", "Austin", "San Antonio", "Fort Worth"] },
+    "fl": { "name": "Florida", "cities": ["Miami", "Orlando", "Tampa", "Jacksonville", "Tallahassee"] },
+    "il": { "name": "Illinois", "cities": ["Chicago", "Aurora", "Naperville", "Springfield"] },
+    "wa": { "name": "Washington", "cities": ["Seattle", "Spokane", "Tacoma", "Bellevue"] }
+  }
+}

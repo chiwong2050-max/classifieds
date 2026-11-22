@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= site.language %>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -29,6 +29,6 @@
   <% } %>
 </head>
 <body class="<%= bodyClass %>">
-  <a class="skip-link" href="#main">Skip to content</a>
+  <a class="skip-link" href="#main"><%= t('nav.skipToContent') %></a>
   <%- include('header') %>
   <main id="main" tabindex="-1">

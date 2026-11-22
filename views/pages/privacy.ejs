@@ -1,39 +1,31 @@
 <%- include('../partials/head') %>
 <div class="container mt-4">
-  <%- include('../partials/breadcrumbs', { items: [{ name: 'Privacy Policy' }] }) %>
+  <%- include('../partials/breadcrumbs', { items: [{ name: t('legal.privacy.title') }] }) %>
   <article class="card card-pad prose">
-    <h1>Privacy Policy</h1>
-    <p class="muted small">Last updated: <%= new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' }) %></p>
+    <h1><%= t('legal.privacy.title') %></h1>
+    <p class="muted small"><%= t('legal.privacy.updated', { date: helpers.formatDate(new Date()) }) %></p>
 
-    <p>This policy explains what information <%= site.name %> collects and how we use it. We aim to collect as little as possible.</p>
+    <p><%= t('legal.privacy.intro', { siteName: site.name }) %></p>
 
-    <h2>What we collect</h2>
-    <ul>
-      <li><strong>Ad content</strong> you provide: title, description, category, location, price and photos.</li>
-      <li><strong>Contact details</strong> you provide: your name and email address. Your email is used to verify your ad, to send you status updates and renewal reminders, and to relay buyer enquiries. It is never published.</li>
-      <li><strong>Technical data</strong>: a one-way, salted hash of your IP address (never the raw address) and basic request data, used for rate limiting and abuse prevention.</li>
-    </ul>
+    <h2><%= t('legal.privacy.collectH') %></h2>
+    <%- t('legal.privacy.collectBody') %>
 
-    <h2>How we use it</h2>
-    <ul>
-      <li>To publish and display your ad once a moderator approves it.</li>
-      <li>To relay messages between buyers and sellers without exposing email addresses.</li>
-      <li>To keep the site safe, including spam and scam prevention.</li>
-    </ul>
+    <h2><%= t('legal.privacy.useH') %></h2>
+    <%- t('legal.privacy.useBody') %>
 
-    <h2>Sharing</h2>
-    <p>We do not sell your data. We share it only with the service providers needed to run the site (for example, email delivery and bot protection) or where required by law.</p>
+    <h2><%= t('legal.privacy.sharingH') %></h2>
+    <p><%= t('legal.privacy.sharingBody') %></p>
 
-    <h2>Retention</h2>
-    <p>Ads and their photos are retained while the ad is live and for a reasonable period after expiry, then removed. Verification links expire automatically.</p>
+    <h2><%= t('legal.privacy.retentionH') %></h2>
+    <p><%= t('legal.privacy.retentionBody') %></p>
 
-    <h2>Your choices</h2>
-    <p>You can ask us to remove your ad at any time using the manage link sent with your ad, or by contacting us.</p>
+    <h2><%= t('legal.privacy.choicesH') %></h2>
+    <p><%= t('legal.privacy.choicesBody') %></p>
 
-    <h2>Cookies</h2>
-    <p>We use a single essential cookie to keep administrators signed in. We do not use advertising or tracking cookies.</p>
+    <h2><%= t('legal.privacy.cookiesH') %></h2>
+    <p><%= t('legal.privacy.cookiesBody') %></p>
 
-    <p class="muted small">This is a template policy provided for the demo build. Review it with a qualified professional before relying on it in production.</p>
+    <p class="muted small"><%= t('legal.privacy.note') %></p>
   </article>
 </div>
 <%- include('../partials/foot') %>

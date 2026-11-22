@@ -8,6 +8,7 @@ const cookieParser = require('cookie-parser');
 const session = require('express-session');
 
 const config = require('./config');
+const { t } = require('./config/i18n');
 const { localsMiddleware } = require('./middleware/locals');
 const { browseLimiter } = require('./middleware/rateLimit');
 const { ensureUploadDir } = require('./services/images');
@@ -93,9 +94,9 @@ require('./routes/listings')(app);
 // --- 404 -------------------------------------------------------------------
 app.use((req, res) => {
   res.status(404).render('pages/error', {
-    title: 'Page not found',
+    title: t('error.notFoundTitle'),
     status: 404,
-    message: 'We could not find that page. It may have been removed or expired.',
+    message: t('error.notFoundBody'),
   });
 });
 
@@ -105,12 +106,12 @@ app.use((err, req, res, next) => {
   console.error('[error]', err);
   const status = err.status || 500;
   res.status(status).render('pages/error', {
-    title: status === 403 ? 'Forbidden' : 'Something went wrong',
+    title: status === 403 ? t('error.forbiddenTitle') : t('error.genericTitle'),
     status,
     message:
       status === 500
-        ? 'An unexpected error occurred. Please try again in a moment.'
-        : err.message || 'Request could not be completed.',
+        ? t('error.genericBody')
+        : err.message || t('error.requestFailed'),
   });
 });
 

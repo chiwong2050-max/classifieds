@@ -1,6 +1,7 @@
 'use strict';
 
 const config = require('../config');
+const { t } = require('../config/i18n');
 
 /**
  * Cloudflare Turnstile verification (bot protection).
@@ -47,9 +48,9 @@ function turnstileMiddleware(req, res, next) {
   verifyToken(token, req.ip).then(({ ok }) => {
     if (!ok) {
       return res.status(400).render('pages/error', {
-        title: 'Verification failed',
+        title: t('error.verifyFailedTitle'),
         status: 400,
-        message: 'We could not verify that you are human. Please try again.',
+        message: t('error.verifyFailedBody'),
       });
     }
     next();

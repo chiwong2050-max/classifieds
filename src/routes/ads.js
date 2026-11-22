@@ -9,6 +9,7 @@ const { adJsonLd, breadcrumbJsonLd } = require('../utils/jsonld');
 const mailer = require('../services/mailer');
 const { actionLimiter } = require('../middleware/rateLimit');
 const { turnstileMiddleware } = require('../middleware/turnstile');
+const { t } = require('../config/i18n');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -18,9 +19,9 @@ module.exports = function adRoutes(app) {
     const ad = ads.getByPublicId(req.params.publicId);
     if (!ad) {
       return res.status(404).render('pages/error', {
-        title: 'Ad not found',
+        title: t('ad.notFoundTitle'),
         status: 404,
-        message: 'This ad is no longer available. It may have expired or been removed.',
+        message: t('ad.notFoundBody'),
       });
     }
 
@@ -33,7 +34,7 @@ module.exports = function adRoutes(app) {
     const images = ads.getImages(ad.id);
 
     const crumbs = [
-      { name: 'Home', url: '/' },
+      { name: t('breadcrumb.home'), url: '/' },
       { name: ad.country.toUpperCase(), url: `/${ad.country}/` },
       { name: ad.state.toUpperCase(), url: `/${ad.country}/${ad.state}/` },
       { name: ad.city_name, url: `/${ad.country}/${ad.state}/${ad.city}/` },

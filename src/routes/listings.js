@@ -6,6 +6,7 @@ const { CATEGORIES, getCategory, categoryName } = require('../config/categories'
 const { getCountry, getState, getCity, slugify } = require('../config/locations');
 const { listingUrl, absolute } = require('../utils/urls');
 const { breadcrumbJsonLd } = require('../utils/jsonld');
+const { t } = require('../config/i18n');
 
 const PER_PAGE = 24;
 const SORTS = ['recent', 'price-asc', 'price-desc'];
@@ -54,8 +55,8 @@ function resolveLocation(segments) {
  * so keyword searches can still be scoped to a country/state/city/category.
  */
 function locationFromQuery(query) {
-  const requested = String(query.country || config.site.defaultCountry).toLowerCase();
-  const countrySlug = getCountry(requested) ? requested : config.site.defaultCountry;
+  const requested = String(query.country || config.site.country).toLowerCase();
+  const countrySlug = getCountry(requested) ? requested : config.site.country;
   const countryObj = getCountry(countrySlug);
   const parts = { country: countrySlug, countryName: countryObj.name, state: null, stateName: null, city: null, cityName: null, category: null };
 
@@ -100,8 +101,8 @@ function renderListing(req, res, { loc, baseUrl, isSearch = false }) {
 
   // --- Titles, meta, canonical, robots, breadcrumbs ---
   const placeLabel = loc.cityName || loc.stateName || loc.countryName;
-  const catLabel = loc.category ? categoryName(loc.category) : 'All categories';
-  const pageLabel = page > 1 ? ` (Page ${page})` : '';
+  const catLabel = loc.category ? categoryName(loc.category) : t('listing.allCategories');
+  const pageLabel = page > 1 ? t('listing.pageSuffix', { page }) : '';
 
   let title;
   let metaDescription;
@@ -110,23 +111,29 @@ function renderListing(req, res, { loc, baseUrl, isSearch = false }) {
   let crumbs;
 
   if (isSearch) {
-    title = filters.q ? `Search results for "${filters.q}"${pageLabel}` : `Search classifieds in ${placeLabel}${pageLabel}`;
-    metaDescription = `Search results on ${config.site.name}${filters.q ? ` for "${filters.q}"` : ''} in ${placeLabel}. Family-safe and reviewed.`;
+    title = filters.q
+      ? t('listing.searchResultsFor', { query: filters.q }) + pageLabel
+      : t('listing.searchIn', { place: placeLabel }) + pageLabel;
+    metaDescription = t('listing.metaSearch', {
+      siteName: config.site.name,
+      queryClause: filters.q ? ` for "${filters.q}"` : '',
+      place: placeLabel,
+    });
     // Search result pages are not canonical and are kept out of the index.
     canonical = null;
     robots = 'noindex,follow';
-    crumbs = [{ name: 'Home', url: '/' }, { name: 'Search', url: '/search' }];
+    crumbs = [{ name: t('breadcrumb.home'), url: '/' }, { name: t('nav.search'), url: '/search' }];
   } else {
     title = loc.category
-      ? `${catLabel} in ${placeLabel}${pageLabel}`
-      : `Classifieds in ${placeLabel} - ${catLabel}${pageLabel}`;
+      ? t('listing.titleCategory', { category: catLabel, place: placeLabel }) + pageLabel
+      : t('listing.titleAll', { place: placeLabel, category: catLabel }) + pageLabel;
     metaDescription = loc.category
-      ? `Browse ${total} ${catLabel.toLowerCase()} listings in ${placeLabel}. Buy and sell safely on ${config.site.name} - every ad is reviewed.`
-      : `Browse ${total} classified ads in ${placeLabel}: jobs, cars, property, services and more. Family-safe and reviewed on ${config.site.name}.`;
+      ? t('listing.metaCategory', { count: total, category: catLabel.toLowerCase(), place: placeLabel, siteName: config.site.name })
+      : t('listing.metaAll', { count: total, place: placeLabel, siteName: config.site.name });
     canonical = absolute(listingUrl(loc));
     const hasFilterQuery = Boolean(filters.q || filters.priceMin != null || filters.priceMax != null || sort !== 'recent' || page > 1);
     robots = hasFilterQuery ? 'noindex,follow' : 'index,follow';
-    crumbs = [{ name: 'Home', url: '/' }];
+    crumbs = [{ name: t('breadcrumb.home'), url: '/' }];
     crumbs.push({ name: loc.countryName, url: listingUrl({ country: loc.country }) });
     if (loc.state) crumbs.push({ name: loc.stateName, url: listingUrl({ country: loc.country, state: loc.state }) });
     if (loc.city) crumbs.push({ name: loc.cityName, url: listingUrl({ country: loc.country, state: loc.state, city: loc.city }) });
@@ -137,7 +144,7 @@ function renderListing(req, res, { loc, baseUrl, isSearch = false }) {
   const categoryCounts = ads.categoryCounts({ country: loc.country, state: loc.state, city: loc.city });
   const countryObj = getCountry(loc.country);
   const siblingCities = loc.state
-    ? countryObj.states[loc.state].cities.map((name) => ({ slug: slugify(name), name }))
+    ? countryObj.regions[loc.state].cities.map((name) => ({ slug: slugify(name), name }))
     : [];
 
   res.render('pages/listing', {

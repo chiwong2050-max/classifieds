@@ -6,8 +6,10 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 
-const DATA_DIR = path.resolve(config.root, 'data');
-const base = process.env.DB_PATH || path.join(DATA_DIR, 'classifieds.sqlite');
+// Default to the active market's database so reset works for any SITE.
+const base = process.env.DB_PATH
+  ? path.resolve(config.root, process.env.DB_PATH)
+  : path.resolve(config.root, config.site.database);
 
 const targets = [base, `${base}-wal`, `${base}-shm`, `${base}-journal`];
 let removed = 0;

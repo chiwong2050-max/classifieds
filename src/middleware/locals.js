@@ -1,6 +1,7 @@
 'use strict';
 
 const config = require('../config');
+const { t, tp } = require('../config/i18n');
 const { CATEGORIES } = require('../config/categories');
 const { LOCATIONS, slugify } = require('../config/locations');
 const helpers = require('../utils/helpers');
@@ -12,6 +13,10 @@ const urls = require('../utils/urls');
  */
 function localsMiddleware(req, res, next) {
   res.locals.site = config.site;
+  // i18n helpers: all UI text is resolved from locale files via these.
+  res.locals.t = t;
+  res.locals.tp = tp;
+  res.locals.locale = config.site.locale;
   res.locals.categories = CATEGORIES;
   res.locals.locations = LOCATIONS;
   res.locals.slugify = slugify;

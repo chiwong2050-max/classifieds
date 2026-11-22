@@ -4,7 +4,7 @@
 
   <div class="ad-layout">
     <div>
-      <section class="stack" aria-label="Photos">
+      <section class="stack" aria-label="<%= t('ad.photosAria') %>">
         <% if (images.length) { %>
           <div class="gallery-main">
             <img id="gallery-main" src="<%= imageUrl(images[0].filename) %>" alt="<%= ad.title %>" width="<%= images[0].width || 1200 %>" height="<%= images[0].height || 900 %>">
@@ -12,70 +12,70 @@
           <% if (images.length > 1) { %>
             <div class="gallery" id="gallery-thumbs">
               <% images.forEach(function (img, i) { %>
-                <img src="<%= imageThumbUrl(img.filename) %>" data-full="<%= imageUrl(img.filename) %>" alt="Photo <%= i + 1 %> of <%= ad.title %>" loading="lazy" width="240" height="180">
+                <img src="<%= imageThumbUrl(img.filename) %>" data-full="<%= imageUrl(img.filename) %>" alt="<%= t('ad.photoAlt', { index: i + 1, title: ad.title }) %>" loading="lazy" width="240" height="180">
               <% }); %>
             </div>
           <% } %>
         <% } else { %>
-          <div class="gallery-main" style="display:grid;place-items:center;min-height:240px;color:var(--text-muted);">No photos provided</div>
+          <div class="gallery-main" style="display:grid;place-items:center;min-height:240px;color:var(--text-muted);"><%= t('ad.noPhotos') %></div>
         <% } %>
       </section>
 
       <section class="card card-pad mt-4">
-        <h2>Description</h2>
+        <h2><%= t('ad.description') %></h2>
         <p class="ad-body"><%= ad.description %></p>
       </section>
 
       <section class="card card-pad mt-4" id="contact">
-        <h2>Contact the seller</h2>
-        <p class="muted small">Your message is relayed by email. The seller's address is never shown, and yours is only shared with them.</p>
-        <% if (contactOk) { %><div class="alert alert-ok">Thanks &mdash; your message has been sent.</div><% } %>
-        <% if (query.contact === 'error') { %><div class="alert alert-err">Please fill in your name, a valid email and a message.</div><% } %>
+        <h2><%= t('ad.contactSeller') %></h2>
+        <p class="muted small"><%= t('ad.contactIntro') %></p>
+        <% if (contactOk) { %><div class="alert alert-ok"><%= t('ad.contactOk') %></div><% } %>
+        <% if (query.contact === 'error') { %><div class="alert alert-err"><%= t('ad.contactError') %></div><% } %>
         <form method="post" action="/ad/<%= ad.public_id %>/contact">
           <div class="form-grid">
             <div class="field">
-              <label for="c-name">Your name</label>
+              <label for="c-name"><%= t('ad.yourName') %></label>
               <input id="c-name" type="text" name="from_name" required maxlength="80">
             </div>
             <div class="field">
-              <label for="c-email">Your email</label>
+              <label for="c-email"><%= t('ad.yourEmail') %></label>
               <input id="c-email" type="email" name="from_email" required maxlength="120">
             </div>
           </div>
           <div class="field">
-            <label for="c-msg">Message</label>
-            <textarea id="c-msg" name="message" required minlength="5" maxlength="2000">Hi, is this still available?</textarea>
+            <label for="c-msg"><%= t('ad.message') %></label>
+            <textarea id="c-msg" name="message" required minlength="5" maxlength="2000"><%= t('ad.messageDefault') %></textarea>
           </div>
           <%# Honeypot %>
-          <div class="hp-field" aria-hidden="true"><label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+          <div class="hp-field" aria-hidden="true"><label><%= t('ad.honeypotLabel') %><input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
           <%- include('../partials/turnstile') %>
-          <button class="btn btn-primary" type="submit">Send message</button>
+          <button class="btn btn-primary" type="submit"><%= t('ad.sendMessage') %></button>
         </form>
       </section>
 
       <section class="card card-pad mt-4" id="report">
-        <h2>Report this ad</h2>
-        <% if (reportOk) { %><div class="alert alert-ok">Thanks for reporting. Our moderators will take a look.</div><% } %>
-        <% if (reportError) { %><div class="alert alert-err">Please choose a reason for reporting.</div><% } %>
+        <h2><%= t('ad.reportTitle') %></h2>
+        <% if (reportOk) { %><div class="alert alert-ok"><%= t('ad.reportOk') %></div><% } %>
+        <% if (reportError) { %><div class="alert alert-err"><%= t('ad.reportError') %></div><% } %>
         <details>
-          <summary style="cursor:pointer;font-weight:600;">Something wrong with this ad?</summary>
+          <summary style="cursor:pointer;font-weight:600;"><%= t('ad.reportSummary') %></summary>
           <form method="post" action="/ad/<%= ad.public_id %>/report" class="mt-4">
             <div class="field">
-              <label for="r-reason">Reason</label>
+              <label for="r-reason"><%= t('ad.reason') %></label>
               <select id="r-reason" name="reason" required>
-                <option value="">Choose a reason…</option>
-                <option value="spam">Spam or scam</option>
-                <option value="prohibited">Prohibited item or content</option>
-                <option value="wrong-category">Wrong category</option>
-                <option value="duplicate">Duplicate ad</option>
-                <option value="other">Other</option>
+                <option value=""><%= t('ad.chooseReason') %></option>
+                <option value="spam"><%= t('ad.reasonSpam') %></option>
+                <option value="prohibited"><%= t('ad.reasonProhibited') %></option>
+                <option value="wrong-category"><%= t('ad.reasonWrongCategory') %></option>
+                <option value="duplicate"><%= t('ad.reasonDuplicate') %></option>
+                <option value="other"><%= t('ad.reasonOther') %></option>
               </select>
             </div>
             <div class="field">
-              <label for="r-msg">Details (optional)</label>
+              <label for="r-msg"><%= t('ad.reportDetails') %></label>
               <textarea id="r-msg" name="message" maxlength="1000" style="min-height:90px;"></textarea>
             </div>
-            <button class="btn btn-outline" type="submit">Submit report</button>
+            <button class="btn btn-outline" type="submit"><%= t('ad.submitReport') %></button>
           </form>
         </details>
       </section>
@@ -86,34 +86,34 @@
         <h1 style="font-size:1.3rem;"><%= ad.title %></h1>
         <p class="price-tag"><%= helpers.formatPrice(ad.price_cents, ad.currency, ad.price_type) %></p>
         <ul class="detail-list">
-          <li><span>Category</span><span><a href="<%= urls.listingUrl({ country: ad.country, state: ad.state, city: ad.city, category: ad.category }) %>"><%= (categories.find(c => c.slug === ad.category) || {}).name %></a></span></li>
-          <li><span>Location</span><span><%= ad.city_name %>, <%= ad.state.toUpperCase() %></span></li>
+          <li><span><%= t('ad.metaCategory') %></span><span><a href="<%= urls.listingUrl({ country: ad.country, state: ad.state, city: ad.city, category: ad.category }) %>"><%= (categories.find(c => c.slug === ad.category) || {}).name %></a></span></li>
+          <li><span><%= t('ad.metaLocation') %></span><span><%= ad.city_name %>, <%= ad.state.toUpperCase() %></span></li>
           <% Object.entries(ad.attrs).forEach(function ([k, v]) { %>
             <li><span><%= k.replace(/[_-]/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); }) %></span><span><%= v %></span></li>
           <% }); %>
-          <li><span>Posted</span><span><%= helpers.formatDate(ad.published_at || ad.created_at) %></span></li>
-          <li><span>Ad reference</span><span><%= ad.public_id.toUpperCase() %></span></li>
-          <li><span>Views</span><span><%= ad.views %></span></li>
+          <li><span><%= t('ad.metaPosted') %></span><span><%= helpers.formatDate(ad.published_at || ad.created_at) %></span></li>
+          <li><span><%= t('ad.metaReference') %></span><span><%= ad.public_id.toUpperCase() %></span></li>
+          <li><span><%= t('ad.metaViews') %></span><span><%= ad.views %></span></li>
         </ul>
         <div class="row mt-4">
-          <button class="btn btn-brand grow" type="button" data-share data-title="<%= ad.title %>" data-url="<%= canonical %>">Share</button>
-          <a class="btn btn-primary grow" href="#contact">Message seller</a>
+          <button class="btn btn-brand grow" type="button" data-share data-title="<%= ad.title %>" data-url="<%= canonical %>" data-copied-label="<%= t('js.linkCopied') %>" data-prompt-label="<%= t('js.copyLink') %>"><%= t('ad.share') %></button>
+          <a class="btn btn-primary grow" href="#contact"><%= t('ad.messageSeller') %></a>
         </div>
       </div>
 
       <div class="card card-pad">
-        <h2 class="small">Stay safe</h2>
+        <h2 class="small"><%= t('ad.staySafe') %></h2>
         <ul class="small muted">
-          <li>Meet in a public place.</li>
-          <li>Never send money before seeing the item.</li>
-          <li>Keep conversations on the platform.</li>
+          <li><%= t('ad.safeTipMeetPublic') %></li>
+          <li><%= t('ad.safeTipNoAdvance') %></li>
+          <li><%= t('ad.safeTipStayOnPlatform') %></li>
         </ul>
-        <a class="small" href="/safety/">Read our safety tips</a>
+        <a class="small" href="/safety/"><%= t('ad.readSafetyTips') %></a>
       </div>
 
       <% if (related.length) { %>
         <div>
-          <h2 class="small">More in <%= ad.city_name %></h2>
+          <h2 class="small"><%= t('ad.moreIn', { city: ad.city_name }) %></h2>
           <div class="stack">
             <% related.slice(0, 4).forEach(function (r) { %><%- include('../partials/adCard', { ad: r }) %><% }); %>
           </div>

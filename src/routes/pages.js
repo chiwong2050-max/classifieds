@@ -4,21 +4,22 @@ const config = require('../config');
 const ads = require('../db/ads');
 const { LOCATIONS } = require('../config/locations');
 const { websiteJsonLd } = require('../utils/jsonld');
+const { t } = require('../config/i18n');
 
 module.exports = function pageRoutes(app) {
   // --- Home -----------------------------------------------------------------
   app.get('/', (req, res) => {
-    const country = config.site.defaultCountry;
+    const country = config.site.country;
     const counts = ads.categoryCounts({ country });
     const { rows: recent } = ads.searchAds({ country }, { limit: 8 });
 
     const states = LOCATIONS[country]
-      ? Object.entries(LOCATIONS[country].states).map(([slug, s]) => ({ slug, name: s.name }))
+      ? Object.entries(LOCATIONS[country].regions).map(([slug, s]) => ({ slug, name: s.name }))
       : [];
 
     res.render('pages/home', {
       title: `${config.site.name} - ${config.site.tagline}`,
-      metaDescription: `${config.site.tagline}. Browse jobs, cars, property, services and more across Australia. No personals or adult content - every ad is reviewed.`,
+      metaDescription: t('home.metaDescription', { tagline: config.site.tagline, countryName: config.site.countryName }),
       canonical: `${config.site.url}/`,
       jsonLd: websiteJsonLd(),
       counts,
@@ -38,8 +39,8 @@ module.exports = function pageRoutes(app) {
   app.get('/browse/', (req, res) => {
     const counts = ads.categoryCounts({});
     res.render('pages/browse', {
-      title: 'Browse all categories and locations',
-      metaDescription: 'Browse every category and location on Classifieds - jobs, for sale, vehicles, property, services, community, pets and events.',
+      title: t('browse.metaTitle'),
+      metaDescription: t('browse.metaDescription', { siteName: config.site.name }),
       canonical: `${config.site.url}/browse/`,
       counts,
     });
@@ -47,16 +48,16 @@ module.exports = function pageRoutes(app) {
 
   // --- Static / legal pages -------------------------------------------------
   const staticPages = {
-    '/privacy/': { view: 'pages/privacy', title: 'Privacy Policy', desc: 'How Classifieds collects, uses and protects your personal information.' },
-    '/terms/': { view: 'pages/terms', title: 'Terms of Use', desc: 'The rules for using Classifieds, including our family-safe content policy.' },
-    '/safety/': { view: 'pages/safety', title: 'Safety Tips', desc: 'Practical tips to stay safe when buying and selling on Classifieds.' },
+    '/privacy/': { view: 'pages/privacy', title: () => t('legal.privacy.title'), desc: () => t('legal.privacy.metaDescription', { siteName: config.site.name }) },
+    '/terms/': { view: 'pages/terms', title: () => t('legal.terms.title'), desc: () => t('legal.terms.metaDescription', { siteName: config.site.name }) },
+    '/safety/': { view: 'pages/safety', title: () => t('legal.safety.title'), desc: () => t('legal.safety.metaDescription', { siteName: config.site.name }) },
   };
 
   for (const [path, meta] of Object.entries(staticPages)) {
     app.get(path, (req, res) => {
       res.render(meta.view, {
-        title: meta.title,
-        metaDescription: meta.desc,
+        title: meta.title(),
+        metaDescription: meta.desc(),
         canonical: `${config.site.url}${path}`,
       });
     });

@@ -1,0 +1,26 @@
+{
+  "key": "au",
+  "name": "Classifieds Australia",
+  "tagline": "Buy, sell and connect locally",
+  "country": "au",
+  "countryName": "Australia",
+  "currency": "AUD",
+  "locale": "en-AU",
+  "language": "en",
+  "dateFormat": "D MMM YYYY",
+  "units": "metric",
+  "url": "http://localhost:3000",
+  "database": "data/au.sqlite",
+  "supportUrl": "https://buymeacoffee.com/aussieloo?ref=classifieds",
+  "emergencyNumber": "000",
+  "regions": {
+    "nsw": { "name": "New South Wales", "cities": ["Sydney", "Newcastle", "Wollongong", "Central Coast", "Albury", "Wagga Wagga"] },
+    "vic": { "name": "Victoria", "cities": ["Melbourne", "Geelong", "Ballarat", "Bendigo", "Shepparton", "Warrnambool"] },
+    "qld": { "name": "Queensland", "cities": ["Brisbane", "Gold Coast", "Sunshine Coast", "Townsville", "Cairns", "Toowoomba"] },
+    "wa": { "name": "Western Australia", "cities": ["Perth", "Mandurah", "Bunbury", "Geraldton", "Albany", "Kalgoorlie"] },
+    "sa": { "name": "South Australia", "cities": ["Adelaide", "Mount Gambier", "Whyalla", "Murray Bridge", "Port Augusta"] },
+    "tas": { "name": "Tasmania", "cities": ["Hobart", "Launceston", "Devonport", "Burnie"] },
+    "act": { "name": "Australian Capital Territory", "cities": ["Canberra", "Belconnen", "Gungahlin", "Tuggeranong"] },
+    "nt": { "name": "Northern Territory", "cities": ["Darwin", "Alice Springs", "Palmerston"] }
+  }
+}

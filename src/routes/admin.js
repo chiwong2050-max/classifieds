@@ -6,14 +6,15 @@ const mailer = require('../services/mailer');
 const { requireAdmin, checkPassword, adminConfigured } = require('../middleware/adminAuth');
 const { adminLoginLimiter } = require('../middleware/rateLimit');
 const { adUrl, absolute } = require('../utils/urls');
+const { t } = require('../config/i18n');
 
 module.exports = function adminRoutes(app) {
   // --- Login ----------------------------------------------------------------
   app.get('/admin/login', (req, res) => {
     if (req.session && req.session.isAdmin) return res.redirect('/admin');
     res.render('pages/admin/login', {
-      title: 'Admin sign in',
-      metaDescription: 'Admin sign in.',
+      title: t('admin.signIn'),
+      metaDescription: t('admin.signInMeta'),
       robots: 'noindex,nofollow',
       canonical: `${config.site.url}/admin/login`,
       error: null,
@@ -24,11 +25,11 @@ module.exports = function adminRoutes(app) {
   app.post('/admin/login', adminLoginLimiter, (req, res) => {
     if (!adminConfigured()) {
       return res.status(500).render('pages/admin/login', {
-        title: 'Admin sign in',
-        metaDescription: 'Admin sign in.',
+        title: t('admin.signIn'),
+        metaDescription: t('admin.signInMeta'),
         robots: 'noindex,nofollow',
         canonical: `${config.site.url}/admin/login`,
-        error: 'No ADMIN_PASSWORD is configured on the server.',
+        error: t('admin.errorNoPassword'),
         adminConfigured: false,
       });
     }
@@ -37,11 +38,11 @@ module.exports = function adminRoutes(app) {
       return res.redirect('/admin');
     }
     return res.status(401).render('pages/admin/login', {
-      title: 'Admin sign in',
-      metaDescription: 'Admin sign in.',
+      title: t('admin.signIn'),
+      metaDescription: t('admin.signInMeta'),
       robots: 'noindex,nofollow',
       canonical: `${config.site.url}/admin/login`,
-      error: 'Incorrect password. Please try again.',
+      error: t('admin.errorWrongPassword'),
       adminConfigured: true,
     });
   });
@@ -56,8 +57,8 @@ module.exports = function adminRoutes(app) {
     const status = ['pending', 'active', 'rejected', 'expired'].includes(req.query.status) ? req.query.status : 'pending';
     const list = ads.listForAdmin(status, { limit: 100 });
     res.render('pages/admin/dashboard', {
-      title: 'Admin dashboard',
-      metaDescription: 'Moderation dashboard.',
+      title: t('admin.dashboardTitle'),
+      metaDescription: t('admin.dashboardMeta'),
       robots: 'noindex,nofollow',
       canonical: `${config.site.url}/admin`,
       counts: ads.adminCounts(),
@@ -72,14 +73,14 @@ module.exports = function adminRoutes(app) {
     const ad = ads.getById(parseInt(req.params.id, 10));
     if (!ad) {
       return res.status(404).render('pages/error', {
-        title: 'Not found',
+        title: t('admin.notFoundTitle'),
         status: 404,
-        message: 'That ad does not exist.',
+        message: t('admin.notFoundBody'),
       });
     }
     res.render('pages/admin/ad-detail', {
-      title: `Review: ${ad.title}`,
-      metaDescription: 'Review an ad.',
+      title: t('admin.reviewTitle', { title: ad.title }),
+      metaDescription: t('admin.reviewMeta'),
       robots: 'noindex,nofollow',
       canonical: `${config.site.url}/admin/ads/${ad.id}`,
       ad,

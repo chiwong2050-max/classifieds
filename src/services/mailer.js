@@ -2,6 +2,7 @@
 
 const nodemailer = require('nodemailer');
 const config = require('../config');
+const { t } = require('../config/i18n');
 
 /**
  * Email sender with two transports:
@@ -31,15 +32,15 @@ function getTransport() {
 
 async function sendMail({ to, subject, text, html }) {
   const message = { from: config.mail.from, to, subject, text, html };
-  const t = getTransport();
+  const tx = getTransport();
 
   if (config.mail.transport === 'smtp' && config.mail.smtp.host) {
-    await t.sendMail(message);
+    await tx.sendMail(message);
     return;
   }
 
   // Console mode - surface the link prominently for development.
-  const result = await t.sendMail(message);
+  const result = await tx.sendMail(message);
   const linkMatch = String(text || '').match(/https?:\/\/\S+/);
   /* eslint-disable no-console */
   console.log('\n─────────────── EMAIL (console transport) ───────────────');
@@ -56,16 +57,16 @@ async function sendMail({ to, subject, text, html }) {
 function sendMagicLink({ to, verifyUrl }) {
   return sendMail({
     to,
-    subject: `Confirm your ${config.site.name} ad`,
+    subject: t('mail.magicSubject', { siteName: config.site.name }),
     text: [
-      `Thanks for posting on ${config.site.name}.`,
+      t('mail.magicIntro', { siteName: config.site.name }),
       '',
-      'Click the link below to verify your email and submit your ad for review.',
-      'This link expires in 60 minutes.',
+      t('mail.magicAction'),
+      t('mail.magicExpiry'),
       '',
       verifyUrl,
       '',
-      'If you did not request this, you can safely ignore this email.',
+      t('mail.magicIgnore'),
     ].join('\n'),
   });
 }
@@ -73,16 +74,15 @@ function sendMagicLink({ to, verifyUrl }) {
 function sendRenewLink({ to, adTitle, renewUrl, manageUrl }) {
   return sendMail({
     to,
-    subject: `Your ${config.site.name} ad is about to expire`,
+    subject: t('mail.renewSubject', { siteName: config.site.name }),
     text: [
-      `Your ad "${adTitle}" on ${config.site.name} will expire soon.`,
+      t('mail.renewIntro', { adTitle, siteName: config.site.name }),
       '',
-      'Renew it with one click to keep it visible for another',
-      `${config.ad.expiryDays} days:`,
+      t('mail.renewAction', { days: config.ad.expiryDays }),
       '',
       renewUrl,
       '',
-      `Manage this ad: ${manageUrl}`,
+      t('mail.renewManage', { manageUrl }),
     ].join('\n'),
   });
 }
@@ -90,13 +90,13 @@ function sendRenewLink({ to, adTitle, renewUrl, manageUrl }) {
 function sendAdApproved({ to, adTitle, adUrl }) {
   return sendMail({
     to,
-    subject: `Your ${config.site.name} ad is live`,
+    subject: t('mail.approvedSubject', { siteName: config.site.name }),
     text: [
-      `Good news - your ad "${adTitle}" has been approved and is now live:`,
+      t('mail.approvedIntro', { adTitle }),
       '',
       adUrl,
       '',
-      `It will run for ${config.ad.expiryDays} days.`,
+      t('mail.approvedExpiry', { days: config.ad.expiryDays }),
     ].join('\n'),
   });
 }
@@ -104,12 +104,12 @@ function sendAdApproved({ to, adTitle, adUrl }) {
 function sendAdRejected({ to, adTitle, reason }) {
   return sendMail({
     to,
-    subject: `Your ${config.site.name} ad was not approved`,
+    subject: t('mail.rejectedSubject', { siteName: config.site.name }),
     text: [
-      `Unfortunately your ad "${adTitle}" was not approved.`,
-      reason ? `\nReason: ${reason}` : '',
+      t('mail.rejectedIntro', { adTitle }),
+      reason ? `\n${t('mail.rejectedReason', { reason })}` : '',
       '',
-      'If you believe this was a mistake, please reply to this email.',
+      t('mail.rejectedReply'),
     ].join('\n'),
   });
 }
@@ -118,19 +118,19 @@ function sendAdRejected({ to, adTitle, reason }) {
 function sendContactRelay({ to, adTitle, adUrl, fromName, fromEmail, body }) {
   return sendMail({
     to,
-    subject: `New enquiry about "${adTitle}"`,
+    subject: t('mail.contactSubject', { adTitle }),
     text: [
-      `Someone is interested in your ad "${adTitle}".`,
+      t('mail.contactIntro', { adTitle }),
       '',
-      `Name:  ${fromName}`,
-      `Email: ${fromEmail}`,
+      t('mail.contactName', { name: fromName }),
+      t('mail.contactEmail', { email: fromEmail }),
       '',
-      'Message:',
+      t('mail.contactMessageLabel'),
       body,
       '',
-      `Ad link: ${adUrl}`,
+      t('mail.contactAdLink', { adUrl }),
       '',
-      'Reply directly to this email to respond to the buyer.',
+      t('mail.contactReply'),
     ].join('\n'),
   });
 }

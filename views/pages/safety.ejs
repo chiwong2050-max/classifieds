@@ -1,44 +1,24 @@
 <%- include('../partials/head') %>
 <div class="container mt-4">
-  <%- include('../partials/breadcrumbs', { items: [{ name: 'Safety Tips' }] }) %>
+  <%- include('../partials/breadcrumbs', { items: [{ name: t('legal.safety.title') }] }) %>
   <article class="card card-pad prose">
-    <h1>Safety Tips</h1>
-    <p class="muted">Buying and selling locally is usually friendly and safe. A few simple habits keep it that way.</p>
+    <h1><%= t('legal.safety.title') %></h1>
+    <p class="muted"><%= t('legal.safety.intro') %></p>
 
-    <h2>Meeting in person</h2>
-    <ul>
-      <li>Meet in a busy, well-lit public place during the day.</li>
-      <li>Take a friend or family member along.</li>
-      <li>Tell someone where you are going and when you expect to be back.</li>
-      <li>Trust your instincts &mdash; if something feels wrong, walk away.</li>
-    </ul>
+    <h2><%= t('legal.safety.meetingH') %></h2>
+    <%- t('legal.safety.meetingBody') %>
 
-    <h2>Payments</h2>
-    <ul>
-      <li>Inspect the item before you pay.</li>
-      <li>Prefer cash or a secure, traceable method on collection.</li>
-      <li>Never send deposits, gift cards or cryptocurrency to someone you haven't met.</li>
-      <li>Be wary of prices that are too good to be true.</li>
-    </ul>
+    <h2><%= t('legal.safety.paymentsH') %></h2>
+    <%- t('legal.safety.paymentsBody') %>
 
-    <h2>Spotting scams</h2>
-    <ul>
-      <li>Requests to move the chat off-platform immediately.</li>
-      <li>Overpayment offers, or "shipping agents" for a local item.</li>
-      <li>Pressure to pay quickly or pay before seeing the item.</li>
-      <li>Sellers who refuse an inspection.</li>
-    </ul>
-    <p>If you spot a scam or a prohibited listing, use the <strong>Report this ad</strong> button on the ad. Our moderators review every report.</p>
+    <h2><%= t('legal.safety.scamsH') %></h2>
+    <%- t('legal.safety.scamsBody') %>
 
-    <h2>Selling safely</h2>
-    <ul>
-      <li>Keep your email private &mdash; use our relay contact form.</li>
-      <li>Remove any personal details from photos (number plates, documents, house numbers).</li>
-      <li>Ask buyers to confirm a time before meeting.</li>
-    </ul>
+    <h2><%= t('legal.safety.sellingH') %></h2>
+    <%- t('legal.safety.sellingBody') %>
 
-    <h2>Emergencies</h2>
-    <p>In an emergency, always contact your local emergency services first (in Australia, call <strong>000</strong>).</p>
+    <h2><%= t('legal.safety.emergencyH') %></h2>
+    <p><%- t('legal.safety.emergencyBody', { countryName: site.countryName, emergency: site.emergencyNumber }) %></p>
   </article>
 </div>
 <%- include('../partials/foot') %>

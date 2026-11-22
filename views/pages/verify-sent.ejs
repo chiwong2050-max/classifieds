@@ -1,14 +1,14 @@
 <%- include('../partials/head') %>
 <div class="container mt-6">
   <div class="card card-pad prose" style="max-width:60ch;margin:0 auto;">
-    <h1>Check your email</h1>
+    <h1><%= t('verifySent.title') %></h1>
     <% if (!honeypotDropped) { %>
-      <p>We've sent a verification link to <strong><%= submittedEmail %></strong>.</p>
-      <p class="muted">Click the link in that email to submit your ad for review. The link expires in 60 minutes.</p>
+      <p><%= t('verifySent.sentTo', { email: submittedEmail }) %></p>
+      <p class="muted"><%= t('verifySent.clickLink') %></p>
     <% } else { %>
-      <p class="muted">If an email is registered, a verification link is on its way.</p>
+      <p class="muted"><%= t('verifySent.honeypot') %></p>
     <% } %>
-    <p class="muted small">Didn't get it? Check your spam folder, or wait a minute and <a href="/post/">try again</a>.</p>
+    <p class="muted small"><%= t('verifySent.notReceived') %></p>
   </div>
 </div>
 <%- include('../partials/foot') %>

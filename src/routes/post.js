@@ -11,6 +11,7 @@ const mailer = require('../services/mailer');
 const { upload } = require('../middleware/upload');
 const { postLimiter } = require('../middleware/rateLimit');
 const { turnstileMiddleware } = require('../middleware/turnstile');
+const { t } = require('../config/i18n');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -39,23 +40,23 @@ function validate(body) {
   const title = String(body.title || '').trim();
   const description = String(body.description || '').trim();
   const category = String(body.category || '').trim();
-  const country = String(body.country || config.site.defaultCountry).trim().toLowerCase();
+  const country = String(body.country || config.site.country).trim().toLowerCase();
   const state = String(body.state || '').trim().toLowerCase();
   const city = String(body.city || '').trim().toLowerCase();
   const contactName = String(body.contact_name || '').trim();
   const contactEmail = String(body.contact_email || '').trim();
 
-  if (title.length < 6) errors.title = 'Please enter a title of at least 6 characters.';
-  if (title.length > 120) errors.title = 'Title must be 120 characters or fewer.';
-  if (description.length < 20) errors.description = 'Please describe your item in at least 20 characters.';
-  if (description.length > 5000) errors.description = 'Description must be 5000 characters or fewer.';
-  if (!getCategory(category)) errors.category = 'Please choose a category.';
-  if (!getCountry(country)) errors.country = 'Please choose a country.';
-  if (!state || !getState(country, state)) errors.state = 'Please choose a state or region.';
-  else if (!city || !getCity(country, state, city)) errors.city = 'Please choose a city.';
-  if (!contactName) errors.contact_name = 'Please enter your name.';
-  if (!EMAIL_RE.test(contactEmail)) errors.contact_email = 'Please enter a valid email address.';
-  if (String(body.agree || '') !== 'yes') errors.agree = 'You must agree to the terms and safety policy.';
+  if (title.length < 6) errors.title = t('post.errorTitle');
+  if (title.length > 120) errors.title = t('post.errorTitleMax');
+  if (description.length < 20) errors.description = t('post.errorDescription');
+  if (description.length > 5000) errors.description = t('post.errorDescriptionMax');
+  if (!getCategory(category)) errors.category = t('post.errorCategory');
+  if (!getCountry(country)) errors.country = t('post.errorCountry');
+  if (!state || !getState(country, state)) errors.state = t('post.errorState');
+  else if (!city || !getCity(country, state, city)) errors.city = t('post.errorCity');
+  if (!contactName) errors.contact_name = t('post.errorName');
+  if (!EMAIL_RE.test(contactEmail)) errors.contact_email = t('post.errorEmail');
+  if (String(body.agree || '') !== 'yes') errors.agree = t('post.errorAgree');
 
   return {
     errors,
@@ -68,13 +69,13 @@ module.exports = function postRoutes(app) {
   // --- Form -----------------------------------------------------------------
   app.get('/post/', (req, res) => {
     res.render('pages/post', {
-      title: 'Post a free ad',
-      metaDescription: `Post a free classified ad on ${config.site.name}. No account needed - verify by email and our team reviews every ad.`,
+      title: t('post.title'),
+      metaDescription: t('post.metaDescription', { siteName: config.site.name }),
       canonical: `${config.site.url}/post/`,
       robots: 'noindex,follow',
       errors: {},
-      values: { country: req.query.country || config.site.defaultCountry, category: req.query.category || '' },
-      preselect: { country: req.query.country || config.site.defaultCountry, state: req.query.state || '', city: req.query.city || '', category: req.query.category || '' },
+      values: { country: req.query.country || config.site.country, category: req.query.category || '' },
+      preselect: { country: req.query.country || config.site.country, state: req.query.state || '', city: req.query.city || '', category: req.query.category || '' },
     });
   });
 
@@ -92,8 +93,8 @@ module.exports = function postRoutes(app) {
         // silently pretend success so bots don't learn to retry.
         if (String(body.website || '').trim() !== '') {
           return res.render('pages/verify-sent', {
-            title: 'Check your email',
-            metaDescription: 'Verify your email to publish your ad.',
+            title: t('verifySent.title'),
+            metaDescription: t('verifySent.metaDescription'),
             robots: 'noindex,nofollow',
             submittedEmail: String(body.contact_email || '').trim(),
             honeypotDropped: true,
@@ -105,7 +106,7 @@ module.exports = function postRoutes(app) {
           // Preserve the user's input (files can't be preserved across a
           // re-render, so we ask them to re-select if needed).
           return res.status(400).render('pages/post', {
-            title: 'Post a free ad',
+            title: t('post.title'),
             robots: 'noindex,follow',
             canonical: `${config.site.url}/post/`,
             errors,
@@ -114,7 +115,6 @@ module.exports = function postRoutes(app) {
           });
         }
 
-        const countryObj = getCountry(values.country);
         const price = parsePrice(body);
         const attrs = collectAttrs(body);
         const moderation = moderateAd({ title: values.title, description: values.description, category: values.category });
@@ -137,7 +137,7 @@ module.exports = function postRoutes(app) {
             city_name: getCity(values.country, values.state, values.city).name,
             price_cents: price.price_cents,
             price_type: price.price_type,
-            currency: countryObj.currency || 'AUD',
+            currency: config.site.currency,
             attrs,
             contact_name: values.contactName,
             contact_email: values.contactEmail,
@@ -154,8 +154,8 @@ module.exports = function postRoutes(app) {
         await mailer.sendMagicLink({ to: values.contactEmail, verifyUrl });
 
         return res.render('pages/verify-sent', {
-          title: 'Check your email',
-          metaDescription: 'Verify your email to publish your ad.',
+          title: t('verifySent.title'),
+          metaDescription: t('verifySent.metaDescription'),
           robots: 'noindex,nofollow',
           submittedEmail: values.contactEmail,
         });
@@ -170,9 +170,9 @@ module.exports = function postRoutes(app) {
     const record = ads.consumeVerificationToken(req.params.token);
     if (!record || !record.payload) {
       return res.status(400).render('pages/error', {
-        title: 'Link expired',
+        title: t('error.linkExpiredTitle'),
         status: 400,
-        message: 'This verification link is invalid or has already been used. Please post your ad again to receive a new link.',
+        message: t('error.linkExpiredBody'),
       });
     }
 
@@ -181,8 +181,8 @@ module.exports = function postRoutes(app) {
     images.forEach((img, i) => ads.addImage(created.id, { ...img, position: i }));
 
     return res.render('pages/post-success', {
-      title: 'Ad submitted for review',
-      metaDescription: 'Your ad has been submitted for review.',
+      title: t('postSuccess.title'),
+      metaDescription: t('postSuccess.metaDescription'),
       robots: 'noindex,nofollow',
       adPublicId: created.public_id,
       manageToken: created.manage_token,

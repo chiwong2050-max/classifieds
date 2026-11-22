@@ -1,22 +1,22 @@
 <header class="site-header">
   <div class="container">
-    <a class="brand" href="/" aria-label="<%= site.name %> home">
+    <a class="brand" href="/" aria-label="<%= t('nav.brandHome', { siteName: site.name }) %>">
       <span class="brand-mark" aria-hidden="true">C</span>
       <span><%= site.name %></span>
     </a>
 
     <form class="header-search" role="search" action="/search" method="get">
-      <label class="hidden" for="header-q">Search listings</label>
+      <label class="hidden" for="header-q"><%= t('nav.searchListings') %></label>
       <div class="searchbar">
-        <input id="header-q" type="search" name="q" placeholder="Search listings…" value="<%= query.q || '' %>" autocomplete="off">
-        <button class="btn btn-brand btn-sm" type="submit">Search</button>
+        <input id="header-q" type="search" name="q" placeholder="<%= t('nav.searchPlaceholder') %>" value="<%= query.q || '' %>" autocomplete="off">
+        <button class="btn btn-brand btn-sm" type="submit"><%= t('common.search') %></button>
       </div>
     </form>
 
-    <nav class="header-nav" aria-label="Main">
-      <a class="navlink" href="/browse/">Browse</a>
-      <% if (isAdmin) { %><a class="navlink" href="/admin">Admin</a><% } %>
-      <a class="btn btn-primary btn-sm" href="/post/">Post an ad</a>
+    <nav class="header-nav" aria-label="<%= t('nav.main') %>">
+      <a class="navlink" href="/browse/"><%= t('nav.browse') %></a>
+      <% if (isAdmin) { %><a class="navlink" href="/admin"><%= t('nav.admin') %></a><% } %>
+      <a class="btn btn-primary btn-sm" href="/post/"><%= t('nav.postAd') %></a>
     </nav>
   </div>
 </header>

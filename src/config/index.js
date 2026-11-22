@@ -1,10 +1,23 @@
 'use strict';
 
 /**
- * Central configuration. Reads environment variables (via dotenv) and
- * exposes typed values with safe defaults so the app boots with zero config.
+ * Central configuration.
+ *
+ * Multi-market model
+ * ------------------
+ * One codebase powers several independent classifieds *markets* (e.g. an
+ * Australian site and a US site). Each market is described by a small JSON
+ * file in `src/config/sites/<key>.json` and gets its own branding, currency,
+ * locale, date/units format, database file and seeded list of regions/cities.
+ *
+ * Which market to run is chosen at start-up via the `SITE` (or `SITE_KEY`)
+ * environment variable. Point `SITE_CONFIG` at an absolute path to load a
+ * custom market file instead. Individual values can still be overridden with
+ * environment variables, so the same build works on different domains with
+ * separate databases without any code changes.
  */
 
+const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 
@@ -21,7 +34,91 @@ const int = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+/** First defined, non-empty value from the list (env override helper). */
+const pick = (...values) => {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return undefined;
+};
+
 const ROOT = path.resolve(__dirname, '../..');
+const SITES_DIR = path.join(__dirname, 'sites');
+
+// Which market are we running as?
+const MARKET_KEY = String(pick(process.env.SITE, process.env.SITE_KEY, 'au')).toLowerCase();
+
+/** Resolve and read the market JSON file (built-in or a custom SITE_CONFIG path). */
+function loadMarket(key) {
+  const custom = process.env.SITE_CONFIG;
+  const file = custom
+    ? path.resolve(ROOT, custom)
+    : path.join(SITES_DIR, `${key}.json`);
+
+  if (!fs.existsSync(file)) {
+    const available = fs.existsSync(SITES_DIR)
+      ? fs.readdirSync(SITES_DIR).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''))
+      : [];
+    throw new Error(
+      `Unknown market "${key}". No config at ${file}. ` +
+      `Available markets: ${available.join(', ') || '(none)'}. ` +
+      'Set SITE=<key> or SITE_CONFIG=<path>.'
+    );
+  }
+
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return { ...raw, key: raw.key || key };
+}
+
+const market = loadMarket(MARKET_KEY);
+
+// Environment overrides sit on top of the market file so deployments can tweak
+// a value without editing the file (e.g. SITE_URL for the live domain).
+const site = {
+  key: market.key,
+  name: pick(process.env.SITE_NAME, market.name, 'Classifieds'),
+  tagline: pick(process.env.SITE_TAGLINE, market.tagline, 'Buy, sell and connect locally'),
+  country: String(pick(process.env.SITE_COUNTRY, process.env.DEFAULT_COUNTRY, market.country, 'au')).toLowerCase(),
+  countryName: pick(process.env.SITE_COUNTRY_NAME, market.countryName, 'Australia'),
+  currency: String(pick(process.env.SITE_CURRENCY, process.env.DEFAULT_CURRENCY, market.currency, 'AUD')).toUpperCase(),
+  locale: pick(process.env.SITE_LOCALE, process.env.LOCALE, market.locale, 'en-AU'),
+  language: String(pick(process.env.SITE_LANGUAGE, process.env.DEFAULT_LANGUAGE, market.language, 'en')).toLowerCase(),
+  dateFormat: pick(process.env.SITE_DATE_FORMAT, market.dateFormat, 'D MMM YYYY'),
+  units: String(pick(process.env.SITE_UNITS, market.units, 'metric')).toLowerCase(),
+  url: String(pick(process.env.SITE_URL, market.url, 'http://localhost:3000')).replace(/\/+$/, ''),
+  database: pick(process.env.DB_PATH, market.database, 'data/classifieds.sqlite'),
+  supportUrl: pick(process.env.SUPPORT_URL, process.env.BUYMEACOFFEE_URL, market.supportUrl, ''),
+  emergencyNumber: pick(process.env.EMERGENCY_NUMBER, market.emergencyNumber, ''),
+  // Seeded country > region > city hierarchy for this market.
+  regions: market.regions || {},
+};
+
+// Distance unit derived from the market's measurement system.
+site.distanceUnit = site.units === 'imperial' ? 'mi' : 'km';
+
+/** Tiny token-based date formatter driven by `site.dateFormat`. */
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function formatDateTokens(date, pattern) {
+  const day = date.getDate();
+  const month = date.getMonth();
+  const replacements = [
+    ['MMMM', MONTHS_LONG[month]],
+    ['MMM', MONTHS_SHORT[month]],
+    ['YYYY', String(date.getFullYear())],
+    ['YY', String(date.getFullYear()).slice(-2)],
+    ['DD', String(day).padStart(2, '0')],
+    ['MM', String(month + 1).padStart(2, '0')],
+    ['D', String(day)],
+    ['M', String(month + 1)],
+  ];
+  let out = pattern;
+  for (const [token, value] of replacements) {
+    out = out.replace(new RegExp(token, 'g'), value);
+  }
+  return out;
+}
 
 const config = {
   env: process.env.NODE_ENV || 'development',
@@ -29,13 +126,9 @@ const config = {
   port: int(process.env.PORT, 3000),
   root: ROOT,
 
-  site: {
-    name: process.env.SITE_NAME || 'Classifieds',
-    tagline: process.env.SITE_TAGLINE || 'Buy, sell and connect locally',
-    url: (process.env.SITE_URL || 'http://localhost:3000').replace(/\/+$/, ''),
-    defaultCountry: (process.env.DEFAULT_COUNTRY || 'au').toLowerCase(),
-    buyMeACoffeeUrl: process.env.BUYMEACOFFEE_URL || 'https://buymeacoffee.com/aussieloo?ref=classifieds',
-  },
+  // Active market descriptor (branding, locale, currency, regions, database).
+  site,
+  formatDateTokens,
 
   session: {
     secret: process.env.SESSION_SECRET || 'dev-insecure-secret-change-me',

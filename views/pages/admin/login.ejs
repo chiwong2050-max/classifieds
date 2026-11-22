@@ -1,17 +1,17 @@
 <%- include('../../partials/head') %>
 <div class="container mt-6">
   <div class="card card-pad" style="max-width:40ch;margin:0 auto;">
-    <h1>Admin sign in</h1>
+    <h1><%= t('admin.signIn') %></h1>
     <% if (!adminConfigured) { %>
-      <div class="alert alert-warn">No <code>ADMIN_PASSWORD</code> is set. Add it to your <code>.env</code> file to enable the admin area.</div>
+      <div class="alert alert-warn"><%- t('admin.noPasswordWarn') %></div>
     <% } %>
     <% if (error) { %><div class="alert alert-err"><%= error %></div><% } %>
     <form method="post" action="/admin/login">
       <div class="field">
-        <label for="password">Password</label>
+        <label for="password"><%= t('admin.password') %></label>
         <input id="password" type="password" name="password" required autocomplete="current-password" autofocus>
       </div>
-      <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+      <button class="btn btn-primary btn-block" type="submit"><%= t('admin.signInButton') %></button>
     </form>
   </div>
 </div>

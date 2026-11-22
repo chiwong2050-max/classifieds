@@ -1,20 +1,20 @@
 <%- include('../../partials/head') %>
 <div class="container mt-4">
   <div class="section-head">
-    <h1 class="mb-0">Moderation dashboard</h1>
-    <form method="post" action="/admin/logout"><button class="btn btn-outline btn-sm" type="submit">Sign out</button></form>
+    <h1 class="mb-0"><%= t('admin.dashboardTitle') %></h1>
+    <form method="post" action="/admin/logout"><button class="btn btn-outline btn-sm" type="submit"><%= t('admin.signOut') %></button></form>
   </div>
 
   <div class="stat-row mb-4">
-    <a class="card stat" href="/admin?status=pending"><span class="n"><%= counts.pending %></span><span class="l">Pending</span></a>
-    <a class="card stat" href="/admin?status=active"><span class="n"><%= counts.active %></span><span class="l">Active</span></a>
-    <a class="card stat" href="/admin?status=rejected"><span class="n"><%= counts.rejected %></span><span class="l">Rejected</span></a>
-    <a class="card stat" href="/admin?status=expired"><span class="n"><%= counts.expired %></span><span class="l">Expired</span></a>
+    <a class="card stat" href="/admin?status=pending"><span class="n"><%= counts.pending %></span><span class="l"><%= t('admin.statusPending') %></span></a>
+    <a class="card stat" href="/admin?status=active"><span class="n"><%= counts.active %></span><span class="l"><%= t('admin.statusActive') %></span></a>
+    <a class="card stat" href="/admin?status=rejected"><span class="n"><%= counts.rejected %></span><span class="l"><%= t('admin.statusRejected') %></span></a>
+    <a class="card stat" href="/admin?status=expired"><span class="n"><%= counts.expired %></span><span class="l"><%= t('admin.statusExpired') %></span></a>
   </div>
 
   <div class="pill-row mb-4">
     <% ['pending','active','rejected','expired'].forEach(function (s) { %>
-      <a class="pill <%= status === s ? 'active' : '' %>" href="/admin?status=<%= s %>"><%= s.charAt(0).toUpperCase() + s.slice(1) %></a>
+      <a class="pill <%= status === s ? 'active' : '' %>" href="/admin?status=<%= s %>"><%= t('admin.status' + s.charAt(0).toUpperCase() + s.slice(1)) %></a>
     <% }); %>
   </div>
 
@@ -22,17 +22,17 @@
     <div class="table-wrap">
       <table class="admin-table">
         <thead>
-          <tr><th>Ad</th><th>Category</th><th>Location</th><th>Price</th><th>Status</th><th>Flags</th><th>Date</th><th></th></tr>
+          <tr><th><%= t('admin.thAd') %></th><th><%= t('admin.thCategory') %></th><th><%= t('admin.thLocation') %></th><th><%= t('admin.thPrice') %></th><th><%= t('admin.thStatus') %></th><th><%= t('admin.thFlags') %></th><th><%= t('admin.thDate') %></th><th></th></tr>
         </thead>
         <tbody>
           <% if (!list.length) { %>
-            <tr><td colspan="8" class="muted center">Nothing here.</td></tr>
+            <tr><td colspan="8" class="muted center"><%= t('admin.nothing') %></td></tr>
           <% } %>
           <% list.forEach(function (ad) { %>
             <tr>
               <td>
                 <strong><%= ad.title %></strong>
-                <div class="muted small">Ref <%= ad.public_id.toUpperCase() %></div>
+                <div class="muted small"><%= t('admin.reference', { reference: ad.public_id.toUpperCase() }) %></div>
               </td>
               <td><%= ad.category %></td>
               <td><%= ad.city_name %>, <%= ad.state.toUpperCase() %></td>
@@ -40,11 +40,11 @@
               <td><span class="badge badge-<%= ad.status %>"><%= ad.status %></span></td>
               <td>
                 <% if (ad.is_flagged) { %>
-                  <span class="badge badge-flagged">flagged</span>
+                  <span class="badge badge-flagged"><%= t('admin.flagged') %></span>
                 <% } else { %><span class="muted small">—</span><% } %>
               </td>
               <td class="small"><%= helpers.formatDate(ad.created_at) %></td>
-              <td><a class="btn btn-sm btn-outline" href="/admin/ads/<%= ad.id %>">Review</a></td>
+              <td><a class="btn btn-sm btn-outline" href="/admin/ads/<%= ad.id %>"><%= t('admin.review') %></a></td>
             </tr>
           <% }); %>
         </tbody>
@@ -53,13 +53,13 @@
   </div>
 
   <section class="section mt-6" id="reports">
-    <div class="section-head"><h2>Recent reports</h2></div>
+    <div class="section-head"><h2><%= t('admin.recentReports') %></h2></div>
     <div class="card">
       <div class="table-wrap">
         <table class="admin-table">
-          <thead><tr><th>Ad</th><th>Reason</th><th>Message</th><th>When</th><th></th></tr></thead>
+          <thead><tr><th><%= t('admin.thAd') %></th><th><%= t('admin.thReason') %></th><th><%= t('admin.thMessage') %></th><th><%= t('admin.thWhen') %></th><th></th></tr></thead>
           <tbody>
-            <% if (!reports.length) { %><tr><td colspan="5" class="muted center">No reports.</td></tr><% } %>
+            <% if (!reports.length) { %><tr><td colspan="5" class="muted center"><%= t('admin.noReports') %></td></tr><% } %>
             <% reports.forEach(function (r) { %>
               <tr>
                 <td>
@@ -69,8 +69,8 @@
                 <td class="small"><%= r.message || '' %></td>
                 <td class="small"><%= helpers.timeAgo(r.created_at) %></td>
                 <td>
-                  <% if (r.handled) { %><span class="badge badge-active">handled</span><% } else { %>
-                    <form method="post" action="/admin/reports/<%= r.id %>/handle"><button class="btn btn-sm btn-outline" type="submit">Mark handled</button></form>
+                  <% if (r.handled) { %><span class="badge badge-active"><%= t('admin.handled') %></span><% } else { %>
+                    <form method="post" action="/admin/reports/<%= r.id %>/handle"><button class="btn btn-sm btn-outline" type="submit"><%= t('admin.markHandled') %></button></form>
                   <% } %>
                 </td>
               </tr>

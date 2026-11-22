@@ -1,45 +1,32 @@
 <%- include('../partials/head') %>
 <div class="container mt-4">
-  <%- include('../partials/breadcrumbs', { items: [{ name: 'Terms of Use' }] }) %>
+  <%- include('../partials/breadcrumbs', { items: [{ name: t('legal.terms.title') }] }) %>
   <article class="card card-pad prose">
-    <h1>Terms of Use</h1>
-    <p class="muted small">Last updated: <%= new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' }) %></p>
+    <h1><%= t('legal.terms.title') %></h1>
+    <p class="muted small"><%= t('legal.terms.updated', { date: helpers.formatDate(new Date()) }) %></p>
 
-    <p>By using <%= site.name %> you agree to these terms. Please read them carefully.</p>
+    <p><%= t('legal.terms.intro', { siteName: site.name }) %></p>
 
-    <h2>Our content policy</h2>
-    <p><%= site.name %> is a family-safe marketplace. The following are <strong>not allowed</strong>:</p>
-    <ul>
-      <li>Personals, dating, escort or any adult content.</li>
-      <li>Gambling and casino promotions.</li>
-      <li>Weapons, ammunition and replica firearms.</li>
-      <li>Illegal drugs, pharmaceuticals and controlled substances.</li>
-      <li>Live animal sales (restricted species), wildlife trafficking or breeder listings.</li>
-      <li>Stolen goods, counterfeit items, or anything unlawful in your jurisdiction.</li>
-      <li>Spam, scams, phishing and misleading offers.</li>
-    </ul>
-    <p>Automated keyword filters flag suspicious listings and every ad is reviewed by a human before it appears. We may reject or remove any ad at our discretion.</p>
+    <h2><%= t('legal.terms.policyH') %></h2>
+    <p><%- t('legal.terms.policyIntro', { siteName: site.name }) %></p>
+    <%- t('legal.terms.policyBody') %>
 
-    <h2>Posting rules</h2>
-    <ul>
-      <li>You must be able to lawfully sell or advertise what you post.</li>
-      <li>Provide accurate details and genuine photos you have the right to use.</li>
-      <li>Do not post duplicate or misleading listings.</li>
-    </ul>
+    <h2><%= t('legal.terms.postingH') %></h2>
+    <%- t('legal.terms.postingBody') %>
 
-    <h2>Your responsibilities</h2>
-    <p>You are responsible for your dealings with other users. <%= site.name %> is a venue that connects buyers and sellers; we do not take part in transactions and are not responsible for the items, services or conduct of users.</p>
+    <h2><%= t('legal.terms.responsibilitiesH') %></h2>
+    <p><%= t('legal.terms.responsibilitiesBody', { siteName: site.name }) %></p>
 
-    <h2>Ads and expiry</h2>
-    <p>Approved ads run for a limited period (currently <%= expiryDays %> days) and can be renewed using the link we email you.</p>
+    <h2><%= t('legal.terms.expiryH') %></h2>
+    <p><%= t('legal.terms.expiryBody', { expiryDays: expiryDays }) %></p>
 
-    <h2>Liability</h2>
-    <p>The service is provided "as is". To the extent permitted by law, we exclude liability for any loss arising from use of the site or from dealings between users.</p>
+    <h2><%= t('legal.terms.liabilityH') %></h2>
+    <p><%= t('legal.terms.liabilityBody') %></p>
 
-    <h2>Changes</h2>
-    <p>We may update these terms. Continued use of the site means you accept the updated terms.</p>
+    <h2><%= t('legal.terms.changesH') %></h2>
+    <p><%= t('legal.terms.changesBody') %></p>
 
-    <p class="muted small">This is a template provided for the demo build. Review it with a qualified professional before relying on it in production.</p>
+    <p class="muted small"><%= t('legal.terms.note') %></p>
   </article>
 </div>
 <%- include('../partials/foot') %>

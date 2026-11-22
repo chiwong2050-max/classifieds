@@ -1,34 +1,34 @@
 <%- include('../partials/head') %>
 <div class="container mt-4">
-  <%- include('../partials/breadcrumbs', { items: [{ name: 'Browse' }] }) %>
-  <h1>Browse categories and locations</h1>
-  <p class="muted">Pick a category, then choose where you are. Every listing page has its own filters and search.</p>
+  <%- include('../partials/breadcrumbs', { items: [{ name: t('nav.browse') }] }) %>
+  <h1><%= t('browse.heading') %></h1>
+  <p class="muted"><%= t('browse.intro') %></p>
 
   <section class="section" aria-labelledby="cats-h">
-    <div class="section-head"><h2 id="cats-h">Categories</h2></div>
+    <div class="section-head"><h2 id="cats-h"><%= t('browse.categories') %></h2></div>
     <div class="grid grid-cards">
       <% categories.forEach(function (c) { %>
-        <a class="card tile" href="/<%= site.defaultCountry %>/<%= c.slug %>/">
+        <a class="card tile" href="/<%= site.country %>/<%= c.slug %>/">
           <span class="ico"><%- include('../partials/icon', { name: c.icon }) %></span>
-          <span><span class="name"><%= c.name %></span><br><span class="count"><%= counts[c.slug] || 0 %> ads</span></span>
+          <span><span class="name"><%= c.name %></span><br><span class="count"><%= t('home.adsCount', { count: counts[c.slug] || 0 }) %></span></span>
         </a>
       <% }); %>
     </div>
   </section>
 
   <section class="section" aria-labelledby="loc-h">
-    <div class="section-head"><h2 id="loc-h">Locations</h2></div>
+    <div class="section-head"><h2 id="loc-h"><%= t('browse.locations') %></h2></div>
     <div class="stack">
       <% Object.entries(locations).forEach(function ([cSlug, c]) { %>
-        <details class="card card-pad" <%= cSlug === site.defaultCountry ? 'open' : '' %>>
+        <details class="card card-pad" <%= cSlug === site.country ? 'open' : '' %>>
           <summary style="cursor:pointer;font-weight:700;"><%= c.name %></summary>
           <div class="stack mt-4">
-            <% Object.entries(c.states).forEach(function ([sSlug, s]) { %>
+            <% Object.entries(c.regions).forEach(function ([sSlug, s]) { %>
               <div>
                 <h3 class="mb-0"><a href="/<%= cSlug %>/<%= sSlug %>/"><%= s.name %></a></h3>
                 <div class="pill-row mt-4">
                   <% s.cities.forEach(function (cityName) { %>
-                    <% var citySlug = cityName.toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); %>
+                    <% var citySlug = slugify(cityName); %>
                     <a class="pill" href="/<%= cSlug %>/<%= sSlug %>/<%= citySlug %>/"><%= cityName %></a>
                   <% }); %>
                 </div>

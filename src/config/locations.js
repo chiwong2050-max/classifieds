@@ -1,68 +1,18 @@
 'use strict';
 
 /**
- * Location hierarchy: country > state/region > city.
- * Clean URL segments are lowercase slugs (e.g. /au/vic/melbourne/for-sale/).
+ * Location hierarchy for the active market: country > region (state) > city.
  *
- * Australia is the launch market and is populated in most detail. Other
- * countries are seeded more lightly and can be extended without code changes.
+ * The hierarchy is seeded from the market config (`config.site.regions`), so
+ * each site ships its own regions and cities and no code changes are needed to
+ * launch a new market. Clean URL segments are lowercase slugs
+ * (e.g. /au/vic/melbourne/for-sale/).
+ *
+ * Note: routes and the database refer to the middle level as `state`
+ * (the column/URL segment); in the config files it is called `regions`.
  */
-const LOCATIONS = {
-  au: {
-    name: 'Australia',
-    currency: 'AUD',
-    states: {
-      nsw: { name: 'New South Wales', cities: ['Sydney', 'Newcastle', 'Wollongong', 'Central Coast', 'Albury', 'Wagga Wagga'] },
-      vic: { name: 'Victoria', cities: ['Melbourne', 'Geelong', 'Ballarat', 'Bendigo', 'Shepparton', 'Warrnambool'] },
-      qld: { name: 'Queensland', cities: ['Brisbane', 'Gold Coast', 'Sunshine Coast', 'Townsville', 'Cairns', 'Toowoomba'] },
-      wa: { name: 'Western Australia', cities: ['Perth', 'Mandurah', 'Bunbury', 'Geraldton', 'Albany', 'Kalgoorlie'] },
-      sa: { name: 'South Australia', cities: ['Adelaide', 'Mount Gambier', 'Whyalla', 'Murray Bridge', 'Port Augusta'] },
-      tas: { name: 'Tasmania', cities: ['Hobart', 'Launceston', 'Devonport', 'Burnie'] },
-      act: { name: 'Australian Capital Territory', cities: ['Canberra', 'Belconnen', 'Gungahlin', 'Tuggeranong'] },
-      nt: { name: 'Northern Territory', cities: ['Darwin', 'Alice Springs', 'Palmerston'] },
-    },
-  },
-  nz: {
-    name: 'New Zealand',
-    currency: 'NZD',
-    states: {
-      auk: { name: 'Auckland', cities: ['Auckland', 'Manukau', 'North Shore'] },
-      wgn: { name: 'Wellington', cities: ['Wellington', 'Lower Hutt', 'Porirua'] },
-      can: { name: 'Canterbury', cities: ['Christchurch', 'Timaru'] },
-      ota: { name: 'Otago', cities: ['Dunedin', 'Queenstown'] },
-    },
-  },
-  gb: {
-    name: 'United Kingdom',
-    currency: 'GBP',
-    states: {
-      eng: { name: 'England', cities: ['London', 'Manchester', 'Birmingham', 'Leeds', 'Liverpool', 'Bristol'] },
-      sct: { name: 'Scotland', cities: ['Edinburgh', 'Glasgow', 'Aberdeen', 'Dundee'] },
-      wls: { name: 'Wales', cities: ['Cardiff', 'Swansea', 'Newport'] },
-      nir: { name: 'Northern Ireland', cities: ['Belfast', 'Londonderry'] },
-    },
-  },
-  us: {
-    name: 'United States',
-    currency: 'USD',
-    states: {
-      ca: { name: 'California', cities: ['Los Angeles', 'San Francisco', 'San Diego', 'Sacramento'] },
-      ny: { name: 'New York', cities: ['New York City', 'Buffalo', 'Rochester', 'Albany'] },
-      tx: { name: 'Texas', cities: ['Houston', 'Dallas', 'Austin', 'San Antonio'] },
-      fl: { name: 'Florida', cities: ['Miami', 'Orlando', 'Tampa', 'Jacksonville'] },
-    },
-  },
-  ca: {
-    name: 'Canada',
-    currency: 'CAD',
-    states: {
-      on: { name: 'Ontario', cities: ['Toronto', 'Ottawa', 'Hamilton', 'London'] },
-      bc: { name: 'British Columbia', cities: ['Vancouver', 'Victoria', 'Kelowna'] },
-      qc: { name: 'Quebec', cities: ['Montreal', 'Quebec City'] },
-      ab: { name: 'Alberta', cities: ['Calgary', 'Edmonton'] },
-    },
-  },
-};
+
+const config = require('./index');
 
 /** Convert a display name to a URL-safe slug (also used for ad title slugs). */
 function slugify(value) {
@@ -76,14 +26,23 @@ function slugify(value) {
     .slice(0, 80);
 }
 
-// Pre-build a fast lookup table of { country: { state: { citySlug: CityName } } }
+// A market is a single country; expose it in the same shape the app expects.
+const LOCATIONS = {
+  [config.site.country]: {
+    name: config.site.countryName,
+    currency: config.site.currency,
+    regions: config.site.regions,
+  },
+};
+
+// Pre-build a fast lookup table of { country: { region: { citySlug: CityName } } }
 const CITY_INDEX = {};
 for (const [countrySlug, country] of Object.entries(LOCATIONS)) {
   CITY_INDEX[countrySlug] = {};
-  for (const [stateSlug, state] of Object.entries(country.states)) {
-    CITY_INDEX[countrySlug][stateSlug] = {};
-    for (const cityName of state.cities) {
-      CITY_INDEX[countrySlug][stateSlug][slugify(cityName)] = cityName;
+  for (const [regionSlug, region] of Object.entries(country.regions)) {
+    CITY_INDEX[countrySlug][regionSlug] = {};
+    for (const cityName of region.cities) {
+      CITY_INDEX[countrySlug][regionSlug][slugify(cityName)] = cityName;
     }
   }
 }
@@ -95,15 +54,15 @@ function getCountry(countrySlug) {
 function getState(countrySlug, stateSlug) {
   const country = getCountry(countrySlug);
   if (!country) return null;
-  return country.states[String(stateSlug || '').toLowerCase()] || null;
+  return country.regions[String(stateSlug || '').toLowerCase()] || null;
 }
 
 function getCity(countrySlug, stateSlug, citySlug) {
   const index = CITY_INDEX[String(countrySlug || '').toLowerCase()];
   if (!index) return null;
-  const stateCities = index[String(stateSlug || '').toLowerCase()];
-  if (!stateCities) return null;
-  const name = stateCities[String(citySlug || '').toLowerCase()];
+  const regionCities = index[String(stateSlug || '').toLowerCase()];
+  if (!regionCities) return null;
+  const name = regionCities[String(citySlug || '').toLowerCase()];
   return name ? { slug: String(citySlug).toLowerCase(), name } : null;
 }
 
@@ -111,13 +70,13 @@ function getCity(countrySlug, stateSlug, citySlug) {
 function allCities() {
   const out = [];
   for (const [countrySlug, country] of Object.entries(LOCATIONS)) {
-    for (const [stateSlug, state] of Object.entries(country.states)) {
-      for (const cityName of state.cities) {
+    for (const [regionSlug, region] of Object.entries(country.regions)) {
+      for (const cityName of region.cities) {
         out.push({
           country: countrySlug,
           countryName: country.name,
-          state: stateSlug,
-          stateName: state.name,
+          state: regionSlug,
+          stateName: region.name,
           city: slugify(cityName),
           cityName,
         });
