@@ -1,7 +1,9 @@
-# Classifieds
+# ListNear
 
-A modern, **family-safe** classifieds web app — built to compete with the big
-generalists while keeping the experience clean, fast and trustworthy.
+**Buy, sell, jobs, services and more near you.**
+
+ListNear is a modern, **family-safe** local marketplace — built to compete with
+the big generalists while keeping the experience clean, fast and trustworthy.
 
 - **Mobile-first & SEO-first** — server-rendered HTML, unique titles/meta and
   JSON-LD on every meaningful page, `sitemap.xml` and `robots.txt` generated
@@ -11,11 +13,12 @@ generalists while keeping the experience clean, fast and trustworthy.
   filter auto-flags spam, adult, gambling/casino, weapons and drugs.
 - **No personals / dating / adult categories at all.** Not a toggle — the
   category set simply doesn't contain them.
-- **Multi-market engine** — one codebase runs several independent sites (e.g.
-  an Australian site and a US site) on different domains, each with its own
-  branding, currency, locale, date/units format and database.
-
-The product name is a placeholder and is configurable via `SITE_NAME`.
+- **Multi-market engine** — one codebase runs several independent sites on
+  different domains, each with its own branding, currency, locale, date/units
+  format and database. Ships with a **US** market
+  ([listnear.app](https://listnear.app)) and an **Australia** market
+  ([au.listnear.app](https://au.listnear.app)), linked by a footer market
+  switcher and `hreflang` alternates.
 
 ---
 
@@ -41,9 +44,10 @@ No React. No client-side framework. Pages are just HTML.
 
 ## Features
 
-1. **Categories** — Jobs, For Sale, Vehicles, Property / Rentals, Services,
-   Community, Pets (rehoming only, restricted species prohibited) and Events.
-   There are **no personals / dating / adult categories**.
+1. **Categories** — For Sale, Jobs, Services, Housing / Rentals, Vehicles,
+   Community, Wanted and Pets (rehoming only, restricted species prohibited).
+   There are **no personals / dating / adult categories**, and a server-side
+   keyword filter blocks gambling/casino/adult words on posting.
 2. **Locations** — `country > state > city` with clean URLs such as
    `/au/vic/melbourne/for-sale/`, each with unique title and meta description.
 3. **Post an ad without an account** — a magic link verifies the poster's
@@ -59,13 +63,16 @@ No React. No client-side framework. Pages are just HTML.
 6. **Search & filters** — keyword + category + location + price range, powered
    by SQLite FTS5 with `bm25()` ranking.
 7. **SEO** — `sitemap.xml` generated from live ads and category/location pages,
-   JSON-LD (`WebSite`, `BreadcrumbList`, `Product`, `JobPosting`, `Event`),
-   canonical URLs and `robots.txt`.
-8. **Abuse protection** — rate limiting, a honeypot field and a Cloudflare
-   Turnstile placeholder (site key/secret via env; disabled when unset).
-9. **Policy pages** — Privacy, Terms and Safety Tips, with a "Buy Me a Coffee"
-   link in the footer.
-10. **PWA** — manifest + service worker for the app shell.
+   JSON-LD (`WebSite`, `BreadcrumbList`, `Product`, `JobPosting`), canonical
+   URLs, Open Graph tags, per-market `robots.txt`, and `hreflang` alternates
+   linking the US and AU home pages.
+8. **Abuse protection** — rate limiting (post/contact/login), a honeypot field
+   and a Cloudflare Turnstile placeholder (site key/secret via env; disabled
+   when unset).
+9. **Policy pages** — About, Contact, Privacy, Terms and Safety Tips, with a
+   "Buy Me a Coffee" link in the footer. No ad scripts of any kind.
+10. **PWA** — manifest + icons (192, 512, maskable) and a service worker that
+    serves the home page offline.
 11. **Developer friendly** — `.env.example`, a seed script with clearly-marked
     `[SAMPLE]` ads, and a DB reset script.
 
@@ -83,22 +90,24 @@ A **market** is a small JSON file in [`src/config/sites/`](src/config/sites)
 | Field | Example | Purpose |
 | ----- | ------- | ------- |
 | `key` | `au` | Market identifier. |
-| `name` / `tagline` | `Classifieds Australia` | Branding shown across the UI. |
+| `name` / `tagline` | `ListNear` | Branding shown across the UI. |
 | `country` / `countryName` | `au` / `Australia` | Country slug used in URLs (`/au/...`) and location data. |
 | `currency` | `AUD` | Default currency for new ads. |
 | `locale` / `language` | `en-AU` / `en` | Locale file selection and date/price formatting. |
 | `dateFormat` | `D MMM YYYY` | Date pattern (`D MMM YYYY` vs `MMM D, YYYY`). |
 | `units` | `metric` | Measurement system: `metric` (km) or `imperial` (mi). |
-| `url` | `https://example.com` | Public base URL (canonicals, links, sitemap). |
+| `url` | `https://au.listnear.app` | Public base URL (canonicals, links, sitemap). |
 | `database` | `data/au.sqlite` | Per-market SQLite file. |
+| `contactEmail` | `support@listnear.app` | Address shown on the `/contact` page. |
 | `supportUrl` / `emergencyNumber` | — | Footer support link and the safety page's emergency number. |
+| `alternates` | `[{ key, hreflang, label, url }]` | Sibling markets for the footer switcher and `hreflang` tags. |
 | `regions` | `{ vic: { name, cities: [...] } }` | Seeded `region > city` hierarchy for that market. |
 
 **Run a market** by selecting it at start-up:
 
 ```bash
-SITE=au npm start        # Australian site, data/au.sqlite
-SITE=us npm start        # US site, data/us.sqlite
+SITE=au npm start        # AU site  -> https://au.listnear.app  (data/au.sqlite)
+SITE=us npm start        # US site  -> https://listnear.app     (data/us.sqlite)
 ```
 
 - Point `SITE_CONFIG` at any path to load a custom market file instead of a
@@ -176,13 +185,15 @@ The app boots with safe defaults and **zero config** for local development.
 | `SITE_LANGUAGE` | Base language dictionary (`locales/<lang>.json`). | `en` |
 | `SITE_DATE_FORMAT` | Date pattern, e.g. `D MMM YYYY` or `MMM D, YYYY`. | market file |
 | `SITE_UNITS` | `metric` (km) or `imperial` (mi). | market file |
+| `SITE_CONTACT_EMAIL` | Address shown on the `/contact` page. | market file |
 | `DB_PATH` | Per-market SQLite file. | market file |
+| `HOST` | Bind address. Defaults to loopback; set `0.0.0.0` behind a reverse proxy/container. | `127.0.0.1` |
 | `PORT` | HTTP port. | `3000` |
 | `NODE_ENV` | `development` or `production`. | `development` |
 | `SESSION_SECRET` | Signs session cookies. **Change in production.** | dev fallback |
 | `ADMIN_PASSWORD` | Password for `/admin`. | unset (admin disabled) |
 | `MAIL_TRANSPORT` | `console` (logs links) or `smtp`. | `console` |
-| `MAIL_FROM` | From address for outgoing mail. | `Classifieds <no-reply@example.com>` |
+| `MAIL_FROM` | From address for outgoing mail. | `ListNear <no-reply@listnear.app>` |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` | SMTP settings (used when `MAIL_TRANSPORT=smtp`). | – |
 | `UPLOAD_DIR` | Where processed images are stored. | `public/uploads` |
 | `MAX_IMAGES_PER_AD` | Max images per ad. | `6` |
@@ -199,7 +210,7 @@ The app boots with safe defaults and **zero config** for local development.
 ## Project structure
 
 ```
-classifieds/
+listnear/
 ├─ src/
 │  ├─ config/            # Env config, i18n, categories, locations, sites/<key>.json markets
 │  ├─ db/                # Connection, schema.sql, ads repository, seed + reset scripts
@@ -231,8 +242,8 @@ classifieds/
 | GET | `/manage/:token` · POST `/manage/:token/renew` | Manage / renew an ad. |
 | GET | `/admin` (+ `/admin/login`, `/admin/ads/:id`, approve/reject, reports) | Moderation. |
 | GET | `/api/locations` | Location data for the post-form cascade. |
-| GET | `/robots.txt` · `/sitemap.xml` | SEO endpoints. |
-| GET | `/privacy/` · `/terms/` · `/safety/` | Policy pages. |
+| GET | `/robots.txt` · `/sitemap.xml` | SEO endpoints (per-market, from `SITE_URL`). |
+| GET | `/about/` · `/contact/` · `/privacy/` · `/terms/` · `/safety/` | Informational / policy pages. |
 
 ---
 
@@ -285,8 +296,8 @@ market** and give each its own branding, domain, database and storage:
 
 | Instance | `SITE` | `SITE_URL` | `DB_PATH` |
 | -------- | ------ | ---------- | --------- |
-| AU site  | `au`   | `https://example.com.au` | `data/au.sqlite` |
-| US site  | `us`   | `https://example.com`    | `data/us.sqlite` |
+| US site  | `us`   | `https://listnear.app`    | `data/us.sqlite` |
+| AU site  | `au`   | `https://au.listnear.app` | `data/au.sqlite` |
 
 Each instance needs its own `data/` and `public/uploads/` volume. Custom markets
 can be added by dropping a JSON file in `src/config/sites/` (or pointing

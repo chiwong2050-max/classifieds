@@ -51,7 +51,7 @@ module.exports = function seoRoutes(app) {
     // Core pages.
     urls.push({ loc: `${config.site.url}/`, changefreq: 'daily', priority: '1.0' });
     urls.push({ loc: `${config.site.url}/browse/`, changefreq: 'daily', priority: '0.8' });
-    for (const p of ['/privacy/', '/terms/', '/safety/']) {
+    for (const p of ['/about/', '/contact/', '/privacy/', '/terms/', '/safety/']) {
       urls.push({ loc: `${config.site.url}${p}`, changefreq: 'monthly', priority: '0.3' });
     }
 

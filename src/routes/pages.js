@@ -51,6 +51,8 @@ module.exports = function pageRoutes(app) {
     '/privacy/': { view: 'pages/privacy', title: () => t('legal.privacy.title'), desc: () => t('legal.privacy.metaDescription', { siteName: config.site.name }) },
     '/terms/': { view: 'pages/terms', title: () => t('legal.terms.title'), desc: () => t('legal.terms.metaDescription', { siteName: config.site.name }) },
     '/safety/': { view: 'pages/safety', title: () => t('legal.safety.title'), desc: () => t('legal.safety.metaDescription', { siteName: config.site.name }) },
+    '/about/': { view: 'pages/about', title: () => t('legal.about.title', { siteName: config.site.name }), desc: () => t('legal.about.metaDescription', { siteName: config.site.name }) },
+    '/contact/': { view: 'pages/contact', title: () => t('legal.contact.title'), desc: () => t('legal.contact.metaDescription', { siteName: config.site.name }) },
   };
 
   for (const [path, meta] of Object.entries(staticPages)) {

@@ -78,7 +78,7 @@ function createAd(data) {
     city_name: data.city_name,
     price_cents: data.price_cents ?? null,
     price_type: data.price_type || 'fixed',
-    currency: data.currency || 'AUD',
+    currency: data.currency || config.site.currency,
     attrs,
     contact_name: data.contact_name,
     contact_email: data.contact_email,

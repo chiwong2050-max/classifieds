@@ -1,0 +1,21 @@
+<%- include('../partials/head') %>
+<div class="container mt-4">
+  <%- include('../partials/breadcrumbs', { items: [{ name: t('footer.about') }] }) %>
+  <article class="card card-pad prose">
+    <h1><%= t('legal.about.title', { siteName: site.name }) %></h1>
+    <p><%= t('legal.about.intro', { siteName: site.name }) %></p>
+
+    <h2><%= t('legal.about.missionH') %></h2>
+    <p><%= t('legal.about.missionBody') %></p>
+
+    <h2><%= t('legal.about.safetyH') %></h2>
+    <p><%= t('legal.about.safetyBody') %></p>
+
+    <h2><%= t('legal.about.communityH') %></h2>
+    <p><%= t('legal.about.communityBody') %></p>
+
+    <h2><%= t('legal.about.contactH') %></h2>
+    <p><%- t('legal.about.contactBody', { email: site.contactEmail }) %></p>
+  </article>
+</div>
+<%- include('../partials/foot') %>

@@ -2,7 +2,7 @@
   <div class="container">
     <div class="footer-grid">
       <div>
-        <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">C</span><span><%= site.name %></span></a>
+        <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">L</span><span><%= site.name %></span></a>
         <p class="small mt-4"><%= t('footer.intro', { tagline: site.tagline }) %></p>
         <a class="coffee" href="<%= site.supportUrl %>" target="_blank" rel="noopener noreferrer">
           <span aria-hidden="true">☕</span> <%= t('footer.buyMeACoffee') %>
@@ -19,12 +19,30 @@
       <div>
         <h3><%= t('footer.company') %></h3>
         <ul class="footer-links">
+          <li><a href="/about/"><%= t('footer.about') %></a></li>
+          <li><a href="/contact/"><%= t('footer.contact') %></a></li>
           <li><a href="/post/"><%= t('footer.postAd') %></a></li>
           <li><a href="/safety/"><%= t('footer.safety') %></a></li>
           <li><a href="/terms/"><%= t('footer.terms') %></a></li>
           <li><a href="/privacy/"><%= t('footer.privacy') %></a></li>
         </ul>
       </div>
+      <% if (site.alternates && site.alternates.length > 1) { %>
+        <div>
+          <h3><%= t('footer.marketSwitcher') %></h3>
+          <ul class="footer-links">
+            <% site.alternates.forEach(function (alt) { %>
+              <li>
+                <% if (alt.key === site.key) { %>
+                  <span aria-current="true"><%= alt.label %></span>
+                <% } else { %>
+                  <a href="<%= alt.url %>" hreflang="<%= alt.hreflang %>"><%= alt.label %></a>
+                <% } %>
+              </li>
+            <% }); %>
+          </ul>
+        </div>
+      <% } %>
     </div>
     <div class="footer-bottom">
       <p class="small mb-0"><%= t('footer.rights', { year: year, siteName: site.name }) %></p>

@@ -92,9 +92,6 @@
           <div class="field"><label for="attr_bathrooms"><%= t('post.bathrooms') %></label><input id="attr_bathrooms" type="number" name="attr_bathrooms" min="0" value="<%= (values.attr_bathrooms || '') %>"></div>
         </div>
       </div>
-      <div data-attr-group="events" hidden>
-        <div class="field"><label for="attr_event_date"><%= t('post.eventDate') %></label><input id="attr_event_date" type="date" name="attr_event_date" value="<%= (values.attr_event_date || '') %>"></div>
-      </div>
       <div data-attr-group="default" hidden>
         <div class="field"><label for="attr_condition"><%= t('post.condition') %></label>
           <select id="attr_condition" name="attr_condition">

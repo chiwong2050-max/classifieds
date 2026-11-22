@@ -1,7 +1,7 @@
-/* Classifieds service worker - app shell only.
-   We deliberately keep caching minimal: only static shell assets are cached,
-   so listings and search results are always fresh. */
-const CACHE = 'classifieds-shell-v1';
+/* ListNear service worker - app shell + offline home page.
+   We deliberately keep caching minimal: only static shell assets and the home
+   page are cached, so listings and search results are always fresh. */
+const CACHE = 'listnear-shell-v1';
 const SHELL = [
   '/css/styles.css',
   '/js/app.js',
@@ -31,6 +31,23 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   // Never cache admin, API, or auth-related routes.
   if (/^\/(admin|api|manage|verify|post)/.test(url.pathname)) return;
+
+  // Home page: network-first, fall back to the last cached copy, then the
+  // offline page. This is the page we want available with no connection.
+  if (url.pathname === '/') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put('/', copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match('/').then((cached) => cached || caches.match('/offline.html')))
+    );
+    return;
+  }
 
   // Cache-first for shell assets, network-first (with offline fallback) for pages.
   const isShell = SHELL.some((p) => url.pathname === p) || url.pathname.startsWith('/icons/');

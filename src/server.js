@@ -50,7 +50,7 @@ app.use(cookieParser(config.session.secret));
 
 app.use(
   session({
-    name: 'classifieds.sid',
+    name: 'listnear.sid',
     secret: config.session.secret,
     resave: false,
     saveUninitialized: false,
@@ -129,8 +129,9 @@ runMaintenance();
 setInterval(runMaintenance, 1000 * 60 * 60); // hourly
 
 if (require.main === module) {
-  app.listen(config.port, () => {
-    console.log(`\n  ${config.site.name} running at ${config.site.url}`);
+  app.listen(config.port, config.host, () => {
+    console.log(`\n  ${config.site.name} (${config.site.key}) listening on http://${config.host}:${config.port}`);
+    console.log(`  Public URL: ${config.site.url}`);
     console.log(`  Environment: ${config.env}\n`);
   });
 }

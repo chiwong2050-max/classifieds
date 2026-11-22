@@ -16,14 +16,14 @@
 const { t } = require('./i18n');
 
 const CATEGORY_DEFS = [
-  { slug: 'jobs', group: 'Work', icon: 'briefcase' },
   { slug: 'for-sale', group: 'Buy & Sell', icon: 'tag' },
-  { slug: 'vehicles', group: 'Buy & Sell', icon: 'car' },
-  { slug: 'property-rentals', group: 'Property', icon: 'home' },
+  { slug: 'jobs', group: 'Work', icon: 'briefcase' },
   { slug: 'services', group: 'Work', icon: 'wrench' },
+  { slug: 'property-rentals', group: 'Property', icon: 'home' },
+  { slug: 'vehicles', group: 'Buy & Sell', icon: 'car' },
   { slug: 'community', group: 'Local', icon: 'users' },
+  { slug: 'wanted', group: 'Buy & Sell', icon: 'search' },
   { slug: 'pets', group: 'Local', icon: 'paw', hasPolicy: true },
-  { slug: 'events', group: 'Local', icon: 'calendar' },
 ];
 
 const CATEGORIES = CATEGORY_DEFS.map((def) => ({

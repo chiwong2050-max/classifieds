@@ -1,0 +1,18 @@
+<%- include('../partials/head') %>
+<div class="container mt-4">
+  <%- include('../partials/breadcrumbs', { items: [{ name: t('legal.contact.title') }] }) %>
+  <article class="card card-pad prose">
+    <h1><%= t('legal.contact.title') %></h1>
+    <p><%= t('legal.contact.intro') %></p>
+
+    <h2><%= t('legal.contact.emailH') %></h2>
+    <p><%- t('legal.contact.emailBody', { email: site.contactEmail }) %></p>
+
+    <h2><%= t('legal.contact.supportH') %></h2>
+    <p><%- t('legal.contact.supportBody', { siteName: site.name, support: site.supportUrl }) %></p>
+
+    <h2><%= t('legal.contact.safetyH') %></h2>
+    <p><%- t('legal.contact.safetyBody') %></p>
+  </article>
+</div>
+<%- include('../partials/foot') %>

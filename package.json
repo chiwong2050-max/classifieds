@@ -1,8 +1,8 @@
 {
-  "name": "classifieds",
+  "name": "listnear",
   "version": "1.0.0",
   "private": true,
-  "description": "A modern, family-safe classifieds web app. Fast, mobile-first, SEO-first.",
+  "description": "ListNear - a modern, family-safe local marketplace. Fast, mobile-first, SEO-first.",
   "type": "commonjs",
   "main": "src/server.js",
   "engines": {
@@ -15,7 +15,9 @@
     "reset-db": "node src/db/reset.js"
   },
   "keywords": [
+    "listnear",
     "classifieds",
+    "marketplace",
     "express",
     "sqlite",
     "ejs",

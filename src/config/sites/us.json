@@ -1,7 +1,7 @@
 {
   "key": "us",
-  "name": "Classifieds USA",
-  "tagline": "Buy, sell and connect in your community",
+  "name": "ListNear",
+  "tagline": "Buy, sell, jobs, services and more near you.",
   "country": "us",
   "countryName": "United States",
   "currency": "USD",
@@ -9,10 +9,15 @@
   "language": "en",
   "dateFormat": "MMM D, YYYY",
   "units": "imperial",
-  "url": "http://localhost:3000",
+  "url": "https://listnear.app",
   "database": "data/us.sqlite",
-  "supportUrl": "https://buymeacoffee.com/aussieloo?ref=classifieds",
+  "supportUrl": "https://buymeacoffee.com/aussieloo?ref=listnear",
+  "contactEmail": "support@listnear.app",
   "emergencyNumber": "911",
+  "alternates": [
+    { "key": "us", "hreflang": "en-US", "label": "United States", "url": "https://listnear.app" },
+    { "key": "au", "hreflang": "en-AU", "label": "Australia", "url": "https://au.listnear.app" }
+  ],
   "regions": {
     "ca": { "name": "California", "cities": ["Los Angeles", "San Francisco", "San Diego", "Sacramento", "San Jose"] },
     "ny": { "name": "New York", "cities": ["New York City", "Buffalo", "Rochester", "Albany", "Syracuse"] },

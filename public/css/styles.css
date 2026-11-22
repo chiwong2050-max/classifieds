@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Classifieds - base styles
+   ListNear - base styles
    Mobile-first, CSS-variable driven theming with automatic dark mode.
    ========================================================================== */
 
@@ -311,7 +311,7 @@ legend { font-weight: 700; padding: 0 6px; }
   h1 { font-size: 1.9rem; }
   .grid-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .form-grid { grid-template-columns: 1fr 1fr; }
-  .footer-grid { grid-template-columns: 2fr 1fr 1fr; }
+  .footer-grid { grid-template-columns: 2fr 1fr 1fr 1fr; }
   .stat-row { grid-template-columns: repeat(4, 1fr); }
   .header-search { display: block; }
 }

@@ -76,8 +76,8 @@ const market = loadMarket(MARKET_KEY);
 // a value without editing the file (e.g. SITE_URL for the live domain).
 const site = {
   key: market.key,
-  name: pick(process.env.SITE_NAME, market.name, 'Classifieds'),
-  tagline: pick(process.env.SITE_TAGLINE, market.tagline, 'Buy, sell and connect locally'),
+  name: pick(process.env.SITE_NAME, market.name, 'ListNear'),
+  tagline: pick(process.env.SITE_TAGLINE, market.tagline, 'Buy, sell, jobs, services and more near you.'),
   country: String(pick(process.env.SITE_COUNTRY, process.env.DEFAULT_COUNTRY, market.country, 'au')).toLowerCase(),
   countryName: pick(process.env.SITE_COUNTRY_NAME, market.countryName, 'Australia'),
   currency: String(pick(process.env.SITE_CURRENCY, process.env.DEFAULT_CURRENCY, market.currency, 'AUD')).toUpperCase(),
@@ -86,9 +86,13 @@ const site = {
   dateFormat: pick(process.env.SITE_DATE_FORMAT, market.dateFormat, 'D MMM YYYY'),
   units: String(pick(process.env.SITE_UNITS, market.units, 'metric')).toLowerCase(),
   url: String(pick(process.env.SITE_URL, market.url, 'http://localhost:3000')).replace(/\/+$/, ''),
-  database: pick(process.env.DB_PATH, market.database, 'data/classifieds.sqlite'),
+  database: pick(process.env.DB_PATH, market.database, 'data/listnear.sqlite'),
   supportUrl: pick(process.env.SUPPORT_URL, process.env.BUYMEACOFFEE_URL, market.supportUrl, ''),
+  contactEmail: pick(process.env.SITE_CONTACT_EMAIL, market.contactEmail, ''),
   emergencyNumber: pick(process.env.EMERGENCY_NUMBER, market.emergencyNumber, ''),
+  // Sibling markets (same codebase, other domains) used for the footer
+  // switcher and `hreflang` alternates. Includes this market itself.
+  alternates: Array.isArray(market.alternates) ? market.alternates : [],
   // Seeded country > region > city hierarchy for this market.
   regions: market.regions || {},
 };
@@ -124,6 +128,7 @@ const config = {
   env: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
   port: int(process.env.PORT, 3000),
+  host: process.env.HOST || '127.0.0.1',
   root: ROOT,
 
   // Active market descriptor (branding, locale, currency, regions, database).
@@ -142,7 +147,7 @@ const config = {
 
   mail: {
     transport: process.env.MAIL_TRANSPORT || 'console',
-    from: process.env.MAIL_FROM || 'Classifieds <no-reply@example.com>',
+    from: process.env.MAIL_FROM || 'ListNear <no-reply@listnear.app>',
     smtp: {
       host: process.env.SMTP_HOST || '',
       port: int(process.env.SMTP_PORT, 587),

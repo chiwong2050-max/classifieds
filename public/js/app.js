@@ -1,4 +1,4 @@
-/* Classifieds - progressive enhancement (vanilla JS, no dependencies). */
+/* ListNear - progressive enhancement (vanilla JS, no dependencies). */
 (function () {
   'use strict';
 
@@ -70,7 +70,7 @@
       var cat = select.value;
       wrap.querySelectorAll('[data-attr-group]').forEach(function (group) {
         var key = group.dataset.attrGroup;
-        var show = cat === key || (key === 'default' && cat && !['vehicles', 'jobs', 'property-rentals', 'events'].includes(cat));
+        var show = cat === key || (key === 'default' && cat && !['vehicles', 'jobs', 'property-rentals'].includes(cat));
         group.hidden = !show;
         // Disable hidden inputs so they are not submitted.
         group.querySelectorAll('input, select, textarea').forEach(function (el) {

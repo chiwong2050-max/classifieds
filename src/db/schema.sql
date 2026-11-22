@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- Classifieds schema (SQLite / better-sqlite3)
+-- ListNear schema (SQLite / better-sqlite3)
 -- ---------------------------------------------------------------------------
 
 PRAGMA foreign_keys = ON;

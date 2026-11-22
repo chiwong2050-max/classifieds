@@ -95,37 +95,9 @@ function jobPostingJsonLd(ad) {
   if (ad.price_cents != null && ad.price_cents > 0) {
     block.baseSalary = {
       '@type': 'MonetaryAmount',
-      currency: ad.currency || 'AUD',
+      currency: ad.currency || config.site.currency,
       value: { '@type': 'QuantitativeValue', value: ad.price_cents / 100, unitText: 'YEAR' },
     };
-  }
-  return toSafeJson(block);
-}
-
-/** Event schema for Events category. */
-function eventJsonLd(ad) {
-  const attrs = ad.attrs || {};
-  const block = {
-    '@context': 'https://schema.org',
-    '@type': 'Event',
-    name: ad.title,
-    description: ad.description,
-    eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
-    eventStatus: 'https://schema.org/EventScheduled',
-    location: {
-      '@type': 'Place',
-      name: ad.city_name,
-      address: {
-        '@type': 'PostalAddress',
-        addressLocality: ad.city_name,
-        addressRegion: ad.state,
-        addressCountry: ad.country.toUpperCase(),
-      },
-    },
-    organizer: { '@type': 'Organization', name: config.site.name, url: config.site.url },
-  };
-  if (attrs.event_date) {
-    block.startDate = attrs.event_date;
   }
   return toSafeJson(block);
 }
@@ -133,7 +105,6 @@ function eventJsonLd(ad) {
 /** Pick the most appropriate schema for a given ad. */
 function adJsonLd(ad, images = []) {
   if (ad.category === 'jobs') return jobPostingJsonLd(ad);
-  if (ad.category === 'events') return eventJsonLd(ad);
   return productJsonLd(ad, images);
 }
 
@@ -142,6 +113,5 @@ module.exports = {
   breadcrumbJsonLd,
   productJsonLd,
   jobPostingJsonLd,
-  eventJsonLd,
   adJsonLd,
 };

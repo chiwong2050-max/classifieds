@@ -34,6 +34,9 @@
     "safety": "Safety tips",
     "terms": "Terms",
     "privacy": "Privacy",
+    "about": "About",
+    "contact": "Contact",
+    "marketSwitcher": "Switch market",
     "rights": "© {year} {siteName}. All rights reserved.",
     "familySafe": "Made for local communities. No personals, no adult content."
   },
@@ -61,7 +64,7 @@
     "whyEmailBody": "Buyers contact you through a relay form — your email stays private.",
     "whyFreeTitle": "Free to post",
     "whyFreeBody": "No account required. Verify by email and you are live.",
-    "metaDescription": "{tagline}. Browse jobs, cars, property, services and more across {countryName}. No personals or adult content - every ad is reviewed."
+    "metaDescription": "{tagline}. Browse jobs, cars, homes, services and more across {countryName}. No personals or adult content - every ad is reviewed."
   },
   "browse": {
     "title": "Browse categories and locations",
@@ -99,7 +102,7 @@
     "postAnAd": "Post an ad",
     "nearbyCities": "Nearby cities",
     "titleCategory": "{category} in {place}",
-    "titleAll": "Classifieds in {place} - {category}",
+    "titleAll": "Listings in {place} - {category}",
     "pageSuffix": " (Page {page})",
     "searchResultsFor": "Search results for \"{query}\"",
     "searchIn": "Search classifieds in {place}",
@@ -189,7 +192,6 @@
     "salaryPlaceholder": "e.g. $65,000 a year",
     "bedrooms": "Bedrooms",
     "bathrooms": "Bathrooms",
-    "eventDate": "Event date",
     "condition": "Condition",
     "conditionNew": "New",
     "conditionLikeNew": "Like new",
@@ -387,21 +389,45 @@
       "sellingBody": "<ul><li>Keep your email private — use our relay contact form.</li><li>Remove any personal details from photos (number plates, documents, house numbers).</li><li>Ask buyers to confirm a time before meeting.</li></ul>",
       "emergencyH": "Emergencies",
       "emergencyBody": "In an emergency, always contact your local emergency services first (in {countryName}, call <strong>{emergency}</strong>)."
+    },
+    "about": {
+      "title": "About {siteName}",
+      "metaDescription": "About {siteName} - a family-safe local marketplace to buy, sell, find jobs, services and more near you.",
+      "intro": "{siteName} is a family-safe local marketplace. Our name says what we do: buy, sell, jobs, services and more near you.",
+      "missionH": "What we do",
+      "missionBody": "We connect people with the things and services close to home. Post an ad in under a minute with no account needed - and every ad is checked by a human before it appears.",
+      "safetyH": "Family-safe by design",
+      "safetyBody": "There are no personals, dating or adult categories, and no gambling, weapons or drug listings. An automated keyword filter flags anything suspicious and our moderators review every report.",
+      "communityH": "Built for local communities",
+      "communityBody": "We run a separate site for each country, so listings, prices and locations always feel local. Today we operate a United States site and an Australia site.",
+      "contactH": "Get in touch",
+      "contactBody": "Questions, feedback or a partnership idea? Email us at <a href=\"mailto:{email}\">{email}</a>."
+    },
+    "contact": {
+      "title": "Contact",
+      "metaDescription": "Contact the {siteName} team.",
+      "intro": "We are happy to help with anything about posting, managing or reporting an ad.",
+      "emailH": "Email us",
+      "emailBody": "The fastest way to reach us is by email: <a href=\"mailto:{email}\">{email}</a>. We aim to reply within a couple of days.",
+      "supportH": "Support the site",
+      "supportBody": "{siteName} is free to use and kept running by the community. If you find it useful, you can <a href=\"{support}\" target=\"_blank\" rel=\"noopener noreferrer\">buy us a coffee</a>.",
+      "safetyH": "Reporting a problem",
+      "safetyBody": "To report a specific ad, use the <strong>Report this ad</strong> button on that ad - our moderators review every report. For urgent safety concerns, contact your local emergency services first."
     }
   },
   "categories": {
-    "jobs": { "name": "Jobs", "blurb": "Full-time, part-time and casual roles." },
     "for-sale": { "name": "For Sale", "blurb": "Second-hand and new goods." },
-    "vehicles": { "name": "Vehicles", "blurb": "Cars, bikes, boats and parts." },
-    "property-rentals": { "name": "Property / Rentals", "blurb": "Rentals, share houses and land." },
+    "jobs": { "name": "Jobs", "blurb": "Full-time, part-time and casual roles." },
     "services": { "name": "Services", "blurb": "Trades, tutoring, cleaning and more." },
+    "property-rentals": { "name": "Housing / Rentals", "blurb": "Rentals, share houses, homes and land." },
+    "vehicles": { "name": "Vehicles", "blurb": "Cars, bikes, boats and parts." },
     "community": { "name": "Community", "blurb": "Notices, groups and local happenings." },
+    "wanted": { "name": "Wanted", "blurb": "Ask for the items or services you are looking for." },
     "pets": {
       "name": "Pets",
       "blurb": "Rehoming, accessories and supplies.",
       "policy": "Live animal sales are restricted. Rehoming/adoption notices only, and never for restricted species."
-    },
-    "events": { "name": "Events", "blurb": "What is on near you." }
+    }
   },
   "price": {
     "free": "Free",

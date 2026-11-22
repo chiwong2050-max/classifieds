@@ -8,8 +8,15 @@
   <link rel="canonical" href="<%= canonical %>">
   <meta name="robots" content="<%= robots %>">
 
+  <% var alternates = site.alternates || []; %>
+  <% alternates.forEach(function (alt) { %>
+  <link rel="alternate" hreflang="<%= alt.hreflang %>" href="<%= alt.url %>/">
+  <% }); %>
+  <% if (alternates.length) { %><link rel="alternate" hreflang="x-default" href="<%= alternates[0].url %>/"><% } %>
+
   <meta property="og:type" content="<%= typeof ogType !== 'undefined' ? ogType : 'website' %>">
   <meta property="og:site_name" content="<%= site.name %>">
+  <meta property="og:locale" content="<%= String(site.locale).replace('-', '_') %>">
   <meta property="og:title" content="<%= title %>">
   <meta property="og:description" content="<%= metaDescription %>">
   <meta property="og:url" content="<%= canonical %>">
