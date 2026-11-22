@@ -1,0 +1,14 @@
+<% robots = 'noindex,follow'; metaDescription = message; %>
+<%- include('../partials/head') %>
+<div class="container mt-6">
+  <div class="card card-pad center prose" style="max-width:56ch;margin:0 auto;">
+    <p class="muted" style="font-size:3rem;font-weight:800;margin:0;"><%= status %></p>
+    <h1><%= title %></h1>
+    <p class="muted"><%= message %></p>
+    <div class="row" style="justify-content:center;">
+      <a class="btn btn-outline" href="/">Go home</a>
+      <a class="btn btn-primary" href="/browse/">Browse listings</a>
+    </div>
+  </div>
+</div>
+<%- include('../partials/foot') %>

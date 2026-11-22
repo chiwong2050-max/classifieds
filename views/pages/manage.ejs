@@ -1,0 +1,35 @@
+<%- include('../partials/head') %>
+<div class="container mt-4">
+  <div class="card card-pad prose" style="max-width:62ch;margin:0 auto;">
+    <h1>Manage your ad</h1>
+
+    <% if (renewed) { %><div class="alert alert-ok">Your ad has been renewed for another <%= expiryDays %> days.</div><% } %>
+
+    <h2 class="mb-0"><%= ad.title %></h2>
+    <p class="muted small">Reference <%= ad.public_id.toUpperCase() %></p>
+
+    <ul class="detail-list">
+      <li><span>Status</span><span><span class="badge badge-<%= ad.status %>"><%= ad.status %></span></span></li>
+      <li><span>Location</span><span><%= ad.city_name %></span></li>
+      <% if (ad.published_at) { %><li><span>Published</span><span><%= helpers.formatDate(ad.published_at) %></span></li><% } %>
+      <% if (ad.expires_at) { %><li><span>Expires</span><span><%= helpers.formatDate(ad.expires_at) %></span></li><% } %>
+      <% if (ad.renewed_at) { %><li><span>Last renewed</span><span><%= helpers.formatDate(ad.renewed_at) %></span></li><% } %>
+    </ul>
+
+    <% if (ad.status === 'active') { %>
+      <p><a href="<%= adLink %>">View your live ad</a></p>
+    <% } %>
+    <% if (ad.reject_reason) { %>
+      <div class="alert alert-err"><strong>Not approved:</strong> <%= ad.reject_reason %></div>
+    <% } %>
+
+    <form method="post" action="/manage/<%= token %>/renew">
+      <button class="btn btn-primary" type="submit">Renew for another 30 days</button>
+    </form>
+
+    <p class="muted small mt-4">Share your ad:</p>
+    <p class="small" style="word-break:break-all;"><%= absoluteAdLink %></p>
+    <button class="btn btn-outline btn-sm" type="button" data-share data-title="<%= ad.title %>" data-url="<%= absoluteAdLink %>">Copy / share link</button>
+  </div>
+</div>
+<%- include('../partials/foot') %>

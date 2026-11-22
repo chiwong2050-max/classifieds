@@ -1,0 +1,90 @@
+<%- include('../partials/head') %>
+<div class="container mt-4">
+  <%- include('../partials/breadcrumbs', { items: crumbs }) %>
+
+  <div class="section-head">
+    <div>
+      <h1 class="mb-0"><%= loc.category ? (categories.find(c => c.slug === loc.category) || {}).name : 'All categories' %><% if (loc.cityName) { %> in <%= loc.cityName %><% } else if (loc.stateName) { %> in <%= loc.stateName %><% } else { %> in <%= loc.countryName %><% } %></h1>
+      <p class="muted"><%= total %> listing<%= total === 1 ? '' : 's' %></p>
+    </div>
+    <a class="btn btn-primary" href="/post/?country=<%= loc.country %>&state=<%= loc.state || '' %>&city=<%= loc.city || '' %>&category=<%= loc.category || '' %>">Post an ad here</a>
+  </div>
+
+  <% if (loc.category === 'pets') { %>
+    <% var petsCat = categories.find(c => c.slug === 'pets'); %>
+    <% if (petsCat && petsCat.policy) { %><div class="alert alert-info small"><%= petsCat.policy %></div><% } %>
+  <% } %>
+
+  <section class="card card-pad mb-4" aria-label="Filters">
+    <form method="get" action="<%= baseUrl %>">
+      <% if (isSearch) { %>
+        <%# Preserve the chosen scope when refining a global search. %>
+        <input type="hidden" name="country" value="<%= loc.country %>">
+        <% if (loc.state) { %><input type="hidden" name="state" value="<%= loc.state %>"><% } %>
+        <% if (loc.city) { %><input type="hidden" name="city" value="<%= loc.city %>"><% } %>
+        <% if (loc.category) { %><input type="hidden" name="category" value="<%= loc.category %>"><% } %>
+      <% } %>
+      <div class="filters">
+        <div class="field">
+          <label for="f-q">Keyword</label>
+          <input id="f-q" type="search" name="q" value="<%= query.q || '' %>" placeholder="e.g. bike, laptop">
+        </div>
+        <div class="field">
+          <label for="f-min">Min price</label>
+          <input id="f-min" type="number" name="priceMin" min="0" step="1" value="<%= query.priceMin || '' %>" placeholder="0">
+        </div>
+        <div class="field">
+          <label for="f-max">Max price</label>
+          <input id="f-max" type="number" name="priceMax" min="0" step="1" value="<%= query.priceMax || '' %>" placeholder="Any">
+        </div>
+        <div class="field">
+          <label for="f-sort">Sort</label>
+          <select id="f-sort" name="sort">
+            <option value="recent" <%= sort === 'recent' ? 'selected' : '' %>>Newest first</option>
+            <option value="price-asc" <%= sort === 'price-asc' ? 'selected' : '' %>>Price: low to high</option>
+            <option value="price-desc" <%= sort === 'price-desc' ? 'selected' : '' %>>Price: high to low</option>
+          </select>
+        </div>
+      </div>
+      <div class="row mt-4">
+        <button class="btn btn-brand" type="submit">Apply filters</button>
+        <a class="btn btn-outline" href="<%= baseUrl %>">Reset</a>
+      </div>
+    </form>
+  </section>
+
+  <div class="pill-row mb-4">
+    <a class="pill <%= !loc.category ? 'active' : '' %>" href="<%= urls.listingUrl({ country: loc.country, state: loc.state, city: loc.city }) %>">All</a>
+    <% allCategories.forEach(function (c) { %>
+      <a class="pill <%= loc.category === c.slug ? 'active' : '' %>" href="<%= urls.listingUrl({ country: loc.country, state: loc.state, city: loc.city, category: c.slug }) %>"><%= c.name %> (<%= categoryCounts[c.slug] || 0 %>)</a>
+    <% }); %>
+  </div>
+
+  <% if (rows.length) { %>
+    <div class="grid grid-cards">
+      <% rows.forEach(function (ad) { %><%- include('../partials/adCard', { ad: ad }) %><% }); %>
+    </div>
+    <%- include('../partials/pagination', { page: page, totalPages: totalPages, baseUrl: baseUrl, query: query }) %>
+  <% } else { %>
+    <div class="card card-pad center">
+      <h3>No listings found</h3>
+      <p class="muted">Nothing matches your filters here yet. Try widening your search, or post the first ad.</p>
+      <div class="row" style="justify-content:center;">
+        <a class="btn btn-outline" href="<%= baseUrl %>">Clear filters</a>
+        <a class="btn btn-primary" href="/post/">Post an ad</a>
+      </div>
+    </div>
+  <% } %>
+
+  <% if (siblingCities.length) { %>
+    <section class="section">
+      <h2 class="small muted">Nearby cities</h2>
+      <div class="pill-row">
+        <% siblingCities.forEach(function (c) { %>
+          <a class="pill" href="<%= urls.listingUrl({ country: loc.country, state: loc.state, city: c.slug, category: loc.category }) %>"><%= c.name %></a>
+        <% }); %>
+      </div>
+    </section>
+  <% } %>
+</div>
+<%- include('../partials/foot') %>

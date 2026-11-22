@@ -1,0 +1,79 @@
+<%- include('../partials/head') %>
+
+<section class="hero">
+  <div class="container">
+    <h1>Buy, sell and connect in your community</h1>
+    <p class="lead">A family-safe classifieds marketplace. No personals, no adult content &mdash; every ad is reviewed by a human before it goes live.</p>
+    <form class="searchbar mt-4" role="search" action="/search" method="get">
+      <label class="hidden" for="hero-q">Search listings</label>
+      <input id="hero-q" type="search" name="q" placeholder="What are you looking for?" autocomplete="off">
+      <button class="btn btn-primary" type="submit">Search</button>
+    </form>
+    <p class="small mt-4"><a href="/post/">Post a free ad &rarr;</a> &nbsp;·&nbsp; takes under a minute, no account needed</p>
+  </div>
+</section>
+
+<div class="container mt-6">
+
+  <section class="section" aria-labelledby="cats-h">
+    <div class="section-head">
+      <h2 id="cats-h">Browse categories</h2>
+      <a href="/browse/" class="small">View all categories &amp; locations</a>
+    </div>
+    <div class="grid grid-cards">
+      <% categories.forEach(function (c) { %>
+        <a class="card tile" href="/<%= country %>/<%= c.slug %>/">
+          <span class="ico"><%- include('../partials/icon', { name: c.icon }) %></span>
+          <span>
+            <span class="name"><%= c.name %></span><br>
+            <span class="count"><%= counts[c.slug] || 0 %> ads</span>
+          </span>
+        </a>
+      <% }); %>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="recent-h">
+    <div class="section-head">
+      <h2 id="recent-h">Latest listings</h2>
+      <a href="/<%= country %>/" class="small">See everything</a>
+    </div>
+    <% if (recent.length) { %>
+      <div class="grid grid-cards">
+        <% recent.forEach(function (ad) { %>
+          <%- include('../partials/adCard', { ad: ad }) %>
+        <% }); %>
+      </div>
+    <% } else { %>
+      <div class="card card-pad center">
+        <h3>No listings yet</h3>
+        <p class="muted">Be the first to post in your area.</p>
+        <a class="btn btn-primary" href="/post/">Post a free ad</a>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="section" aria-labelledby="loc-h">
+    <div class="section-head"><h2 id="loc-h">Popular locations</h2></div>
+    <div class="pill-row">
+      <% states.forEach(function (s) { %>
+        <a class="pill" href="/<%= country %>/<%= s.slug %>/"><%= s.name %></a>
+      <% }); %>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="card card-pad">
+      <h2>Why <%= site.name %>?</h2>
+      <div class="grid grid-cards">
+        <div><h3>Human reviewed</h3><p class="muted small">Every ad is checked before it appears, so spam and scams stay out.</p></div>
+        <div><h3>Family safe</h3><p class="muted small">No personals, dating or adult categories. Ever.</p></div>
+        <div><h3>Email protected</h3><p class="muted small">Buyers contact you through a relay form &mdash; your email stays private.</p></div>
+        <div><h3>Free to post</h3><p class="muted small">No account required. Verify by email and you are live.</p></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<%- include('../partials/foot') %>

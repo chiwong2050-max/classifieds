@@ -1,0 +1,21 @@
+<% if (totalPages > 1) { %>
+<nav class="pagination" aria-label="Pagination">
+  <% if (page > 1) { %>
+    <a href="<%= baseUrl + urls.withQuery(query, { page: page - 1 }) %>" rel="prev">‹ Prev</a>
+  <% } %>
+  <% for (let p = 1; p <= totalPages; p += 1) { %>
+    <% if (p === 1 || p === totalPages || Math.abs(p - page) <= 2) { %>
+      <% if (p === page) { %>
+        <span class="current" aria-current="page"><%= p %></span>
+      <% } else { %>
+        <a href="<%= baseUrl + urls.withQuery(query, { page: p }) %>"><%= p %></a>
+      <% } %>
+    <% } else if (Math.abs(p - page) === 3) { %>
+      <span aria-hidden="true">…</span>
+    <% } %>
+  <% } %>
+  <% if (page < totalPages) { %>
+    <a href="<%= baseUrl + urls.withQuery(query, { page: page + 1 }) %>" rel="next">Next ›</a>
+  <% } %>
+</nav>
+<% } %>

@@ -1,0 +1,174 @@
+<%- include('../partials/head') %>
+<div class="container mt-4">
+  <%- include('../partials/breadcrumbs', { items: [{ name: 'Post an ad' }] }) %>
+  <h1>Post a free ad</h1>
+  <p class="muted">No account needed. Add your details, verify your email, and our team reviews your ad before it goes live.</p>
+
+  <% if (Object.keys(errors).length) { %>
+    <div class="alert alert-err">Please fix the highlighted fields below.</div>
+  <% } %>
+
+  <form method="post" action="/post/" enctype="multipart/form-data" data-post-form>
+    <fieldset>
+      <legend>What are you posting?</legend>
+      <div class="field">
+        <label for="category">Category <span aria-hidden="true">*</span></label>
+        <select id="category" name="category" required data-category-select>
+          <option value="">Choose a category…</option>
+          <% categories.forEach(function (c) { %>
+            <option value="<%= c.slug %>" <%= (values.category === c.slug) ? 'selected' : '' %>><%= c.name %></option>
+          <% }); %>
+        </select>
+        <% if (errors.category) { %><p class="field-error"><%= errors.category %></p><% } %>
+      </div>
+
+      <div class="field">
+        <label for="title">Title <span aria-hidden="true">*</span></label>
+        <input id="title" type="text" name="title" maxlength="120" required value="<%= values.title || '' %>" placeholder="e.g. Vintage road bike, great condition">
+        <% if (errors.title) { %><p class="field-error"><%= errors.title %></p><% } %>
+        <p class="hint">A clear, specific title gets more replies.</p>
+      </div>
+
+      <div class="field">
+        <label for="description">Description <span aria-hidden="true">*</span></label>
+        <textarea id="description" name="description" required minlength="20" maxlength="5000" placeholder="Describe the item, its condition, and anything a buyer should know."><%= values.description || '' %></textarea>
+        <% if (errors.description) { %><p class="field-error"><%= errors.description %></p><% } %>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Photos <span class="muted small">(optional, up to <%= maxImages %>)</span></legend>
+      <div class="field">
+        <label for="images">Add photos</label>
+        <input id="images" type="file" name="images" accept="image/*" multiple data-images-input>
+        <p class="hint">We automatically resize and compress images to fast-loading WebP.</p>
+        <p class="img-count" data-images-count></p>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Price</legend>
+      <div class="form-grid">
+        <div class="field">
+          <label for="price">Price</label>
+          <input id="price" type="number" name="price" min="0" step="1" value="<%= (values.price !== undefined ? values.price : '') %>" placeholder="0">
+        </div>
+        <div class="field">
+          <label for="price_type">Price type</label>
+          <select id="price_type" name="price_type">
+            <option value="fixed" <%= values.price_type === 'fixed' ? 'selected' : '' %>>Fixed price</option>
+            <option value="negotiable" <%= values.price_type === 'negotiable' ? 'selected' : '' %>>Negotiable</option>
+            <option value="free" <%= values.price_type === 'free' ? 'selected' : '' %>>Free / giveaway</option>
+            <option value="contact" <%= values.price_type === 'contact' ? 'selected' : '' %>>Contact for price</option>
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset data-attr-groups>
+      <legend>Extra details <span class="muted small">(optional)</span></legend>
+      <div data-attr-group="vehicles" hidden>
+        <div class="form-grid">
+          <div class="field"><label for="attr_make">Make</label><input id="attr_make" type="text" name="attr_make" maxlength="60" value="<%= (values.attr_make || '') %>"></div>
+          <div class="field"><label for="attr_model">Model</label><input id="attr_model" type="text" name="attr_model" maxlength="60" value="<%= (values.attr_model || '') %>"></div>
+          <div class="field"><label for="attr_year">Year</label><input id="attr_year" type="number" name="attr_year" min="1900" max="2100" value="<%= (values.attr_year || '') %>"></div>
+          <div class="field"><label for="attr_odometer">Odometer (km)</label><input id="attr_odometer" type="number" name="attr_odometer" min="0" value="<%= (values.attr_odometer || '') %>"></div>
+        </div>
+      </div>
+      <div data-attr-group="jobs" hidden>
+        <div class="form-grid">
+          <div class="field"><label for="attr_job_type">Job type</label>
+            <select id="attr_job_type" name="attr_job_type">
+              <option value="">Choose…</option>
+              <option>Full-time</option><option>Part-time</option><option>Casual</option><option>Contract</option><option>Apprenticeship</option>
+            </select>
+          </div>
+          <div class="field"><label for="attr_salary">Salary / pay</label><input id="attr_salary" type="text" name="attr_salary" maxlength="60" value="<%= (values.attr_salary || '') %>" placeholder="e.g. $65,000 a year"></div>
+        </div>
+      </div>
+      <div data-attr-group="property-rentals" hidden>
+        <div class="form-grid">
+          <div class="field"><label for="attr_bedrooms">Bedrooms</label><input id="attr_bedrooms" type="number" name="attr_bedrooms" min="0" value="<%= (values.attr_bedrooms || '') %>"></div>
+          <div class="field"><label for="attr_bathrooms">Bathrooms</label><input id="attr_bathrooms" type="number" name="attr_bathrooms" min="0" value="<%= (values.attr_bathrooms || '') %>"></div>
+        </div>
+      </div>
+      <div data-attr-group="events" hidden>
+        <div class="field"><label for="attr_event_date">Event date</label><input id="attr_event_date" type="date" name="attr_event_date" value="<%= (values.attr_event_date || '') %>"></div>
+      </div>
+      <div data-attr-group="default" hidden>
+        <div class="field"><label for="attr_condition">Condition</label>
+          <select id="attr_condition" name="attr_condition">
+            <option value="">Choose…</option>
+            <option>New</option><option>Like new</option><option>Good</option><option>Fair</option><option>For parts</option>
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Location</legend>
+      <div class="form-grid">
+        <div class="field">
+          <label for="country">Country <span aria-hidden="true">*</span></label>
+          <select id="country" name="country" required data-country>
+            <% Object.entries(locations).forEach(function ([slug, c]) { %>
+              <option value="<%= slug %>" <%= values.country === slug ? 'selected' : '' %>><%= c.name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <label for="state">State / region <span aria-hidden="true">*</span></label>
+          <select id="state" name="state" required data-state data-value="<%= preselect.state %>">
+            <option value="">Choose…</option>
+            <% var selectedCountry = locations[preselect.country]; %>
+            <% if (selectedCountry) { Object.entries(selectedCountry.states).forEach(function ([sSlug, s]) { %>
+              <option value="<%= sSlug %>" <%= preselect.state === sSlug ? 'selected' : '' %>><%= s.name %></option>
+            <% }); } %>
+          </select>
+          <% if (errors.state) { %><p class="field-error"><%= errors.state %></p><% } %>
+        </div>
+        <div class="field">
+          <label for="city">City <span aria-hidden="true">*</span></label>
+          <select id="city" name="city" required data-city data-value="<%= preselect.city %>">
+            <option value="">Choose…</option>
+            <% var selectedState = selectedCountry && preselect.state ? selectedCountry.states[preselect.state] : null; %>
+            <% if (selectedState) { selectedState.cities.forEach(function (cityName) { %>
+              <option value="<%= slugify(cityName) %>" <%= preselect.city === slugify(cityName) ? 'selected' : '' %>><%= cityName %></option>
+            <% }); } %>
+          </select>
+          <% if (errors.city) { %><p class="field-error"><%= errors.city %></p><% } %>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Your details</legend>
+      <div class="form-grid">
+        <div class="field">
+          <label for="contact_name">Your name <span aria-hidden="true">*</span></label>
+          <input id="contact_name" type="text" name="contact_name" required maxlength="80" value="<%= values.contact_name || '' %>">
+          <% if (errors.contact_name) { %><p class="field-error"><%= errors.contact_name %></p><% } %>
+        </div>
+        <div class="field">
+          <label for="contact_email">Email <span aria-hidden="true">*</span></label>
+          <input id="contact_email" type="email" name="contact_email" required maxlength="120" value="<%= values.contact_email || '' %>">
+          <% if (errors.contact_email) { %><p class="field-error"><%= errors.contact_email %></p><% } %>
+          <p class="hint">We email you a link to verify. Your address is never shown publicly.</p>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="hp-field" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+
+    <div class="field checkbox">
+      <input id="agree" type="checkbox" name="agree" value="yes" required <%= values.agree === 'yes' ? 'checked' : '' %>>
+      <label for="agree" style="font-weight:400;">I agree to the <a href="/terms/">terms</a> and confirm my ad follows the <a href="/safety/">safety policy</a> (no personals, adult, gambling, weapons or drug content).</label>
+    </div>
+    <% if (errors.agree) { %><p class="field-error"><%= errors.agree %></p><% } %>
+
+    <%- include('../partials/turnstile') %>
+
+    <button class="btn btn-primary" type="submit">Submit ad for review</button>
+  </form>
+</div>
+<%- include('../partials/foot') %>

@@ -1,0 +1,78 @@
+<%- include('../../partials/head') %>
+<div class="container mt-4">
+  <%- include('../../partials/breadcrumbs', { items: [{ name: 'Admin', url: '/admin' }, { name: 'Review ad' }] }) %>
+  <div class="section-head">
+    <h1 class="mb-0">Review ad</h1>
+    <span class="badge badge-<%= ad.status %>"><%= ad.status %></span>
+  </div>
+
+  <div class="ad-layout">
+    <div class="stack">
+      <div class="card card-pad">
+        <h2><%= ad.title %></h2>
+        <p class="price-tag"><%= helpers.formatPrice(ad.price_cents, ad.currency, ad.price_type) %></p>
+        <p class="ad-body"><%= ad.description %></p>
+      </div>
+
+      <div class="card card-pad">
+        <h2>Images (<%= images.length %>)</h2>
+        <% if (images.length) { %>
+          <div class="gallery">
+            <% images.forEach(function (img) { %>
+              <img src="<%= imageUrl(img.filename) %>" alt="" width="240" height="180">
+            <% }); %>
+          </div>
+        <% } else { %><p class="muted">No images.</p><% } %>
+      </div>
+    </div>
+
+    <aside class="stack">
+      <div class="card card-pad">
+        <h2 class="small">Submission details</h2>
+        <ul class="detail-list">
+          <li><span>Reference</span><span><%= ad.public_id.toUpperCase() %></span></li>
+          <li><span>Category</span><span><%= ad.category %></span></li>
+          <li><span>Location</span><span><%= ad.city_name %>, <%= ad.state.toUpperCase() %>, <%= ad.country.toUpperCase() %></span></li>
+          <li><span>Contact name</span><span><%= ad.contact_name %></span></li>
+          <li><span>Contact email</span><span style="word-break:break-all;"><a href="mailto:<%= ad.contact_email %>"><%= ad.contact_email %></a></span></li>
+          <li><span>IP hash</span><span><%= ad.ip_hash || '—' %></span></li>
+          <li><span>Submitted</span><span><%= helpers.formatDate(ad.created_at) %></span></li>
+          <% Object.entries(ad.attrs).forEach(function ([k, v]) { %>
+            <li><span><%= k %></span><span><%= v %></span></li>
+          <% }); %>
+        </ul>
+      </div>
+
+      <% if (ad.is_flagged && ad.flag_reasons.length) { %>
+        <div class="card card-pad">
+          <h2 class="small">Automated flags</h2>
+          <ul class="small">
+            <% ad.flag_reasons.forEach(function (f) { %>
+              <li><strong><%= f.category %></strong> (<%= f.severity %>): &ldquo;<%= f.term %>&rdquo;</li>
+            <% }); %>
+          </ul>
+        </div>
+      <% } %>
+
+      <% if (ad.reject_reason) { %>
+        <div class="alert alert-err"><strong>Rejection reason:</strong> <%= ad.reject_reason %></div>
+      <% } %>
+
+      <div class="card card-pad stack">
+        <h2 class="small">Decision</h2>
+        <form method="post" action="/admin/ads/<%= ad.id %>/approve">
+          <button class="btn btn-primary btn-block" type="submit">Approve &amp; publish</button>
+        </form>
+        <form method="post" action="/admin/ads/<%= ad.id %>/reject">
+          <div class="field">
+            <label for="reason">Rejection reason (emailed to poster)</label>
+            <textarea id="reason" name="reason" style="min-height:80px;" maxlength="500" placeholder="e.g. Prohibited item / spam"></textarea>
+          </div>
+          <button class="btn btn-danger btn-block" type="submit">Reject</button>
+        </form>
+        <a class="btn btn-outline btn-block" href="/admin">Back to dashboard</a>
+      </div>
+    </aside>
+  </div>
+</div>
+<%- include('../../partials/foot') %>

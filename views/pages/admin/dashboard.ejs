@@ -1,0 +1,84 @@
+<%- include('../../partials/head') %>
+<div class="container mt-4">
+  <div class="section-head">
+    <h1 class="mb-0">Moderation dashboard</h1>
+    <form method="post" action="/admin/logout"><button class="btn btn-outline btn-sm" type="submit">Sign out</button></form>
+  </div>
+
+  <div class="stat-row mb-4">
+    <a class="card stat" href="/admin?status=pending"><span class="n"><%= counts.pending %></span><span class="l">Pending</span></a>
+    <a class="card stat" href="/admin?status=active"><span class="n"><%= counts.active %></span><span class="l">Active</span></a>
+    <a class="card stat" href="/admin?status=rejected"><span class="n"><%= counts.rejected %></span><span class="l">Rejected</span></a>
+    <a class="card stat" href="/admin?status=expired"><span class="n"><%= counts.expired %></span><span class="l">Expired</span></a>
+  </div>
+
+  <div class="pill-row mb-4">
+    <% ['pending','active','rejected','expired'].forEach(function (s) { %>
+      <a class="pill <%= status === s ? 'active' : '' %>" href="/admin?status=<%= s %>"><%= s.charAt(0).toUpperCase() + s.slice(1) %></a>
+    <% }); %>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr><th>Ad</th><th>Category</th><th>Location</th><th>Price</th><th>Status</th><th>Flags</th><th>Date</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% if (!list.length) { %>
+            <tr><td colspan="8" class="muted center">Nothing here.</td></tr>
+          <% } %>
+          <% list.forEach(function (ad) { %>
+            <tr>
+              <td>
+                <strong><%= ad.title %></strong>
+                <div class="muted small">Ref <%= ad.public_id.toUpperCase() %></div>
+              </td>
+              <td><%= ad.category %></td>
+              <td><%= ad.city_name %>, <%= ad.state.toUpperCase() %></td>
+              <td><%= helpers.formatPrice(ad.price_cents, ad.currency, ad.price_type) %></td>
+              <td><span class="badge badge-<%= ad.status %>"><%= ad.status %></span></td>
+              <td>
+                <% if (ad.is_flagged) { %>
+                  <span class="badge badge-flagged">flagged</span>
+                <% } else { %><span class="muted small">—</span><% } %>
+              </td>
+              <td class="small"><%= helpers.formatDate(ad.created_at) %></td>
+              <td><a class="btn btn-sm btn-outline" href="/admin/ads/<%= ad.id %>">Review</a></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <section class="section mt-6" id="reports">
+    <div class="section-head"><h2>Recent reports</h2></div>
+    <div class="card">
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Ad</th><th>Reason</th><th>Message</th><th>When</th><th></th></tr></thead>
+          <tbody>
+            <% if (!reports.length) { %><tr><td colspan="5" class="muted center">No reports.</td></tr><% } %>
+            <% reports.forEach(function (r) { %>
+              <tr>
+                <td>
+                  <% if (r.ad_id) { %><a href="/admin/ads/<%= r.ad_id %>"><%= r.ad_title || r.public_id %></a><% } else { %><%= r.public_id %><% } %>
+                </td>
+                <td><%= r.reason %></td>
+                <td class="small"><%= r.message || '' %></td>
+                <td class="small"><%= helpers.timeAgo(r.created_at) %></td>
+                <td>
+                  <% if (r.handled) { %><span class="badge badge-active">handled</span><% } else { %>
+                    <form method="post" action="/admin/reports/<%= r.id %>/handle"><button class="btn btn-sm btn-outline" type="submit">Mark handled</button></form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+<%- include('../../partials/foot') %>
