@@ -170,6 +170,7 @@ main { flex: 1 0 auto; padding: var(--space-5) 0 var(--space-7); }
 .btn-outline:hover { background: var(--surface-2); }
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-sm { padding: 7px 12px; min-height: 36px; font-size: 0.875rem; }
+.btn-lg { padding: 14px 26px; min-height: 52px; font-size: 1.05rem; }
 .btn-block { width: 100%; }
 .btn[disabled] { opacity: .55; cursor: not-allowed; }
 
@@ -209,6 +210,26 @@ main { flex: 1 0 auto; padding: var(--space-5) 0 var(--space-7); }
 .hero { background: linear-gradient(160deg, var(--brand-soft), transparent 70%); border-bottom: 1px solid var(--border); padding: var(--space-6) 0; }
 .hero h1 { font-size: 1.9rem; margin-bottom: var(--space-3); }
 .hero p.lead { font-size: 1.05rem; color: var(--text-muted); max-width: 60ch; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+
+/* --- How it works --------------------------------------------------------- */
+.how-strip { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-4); grid-template-columns: 1fr; counter-reset: none; }
+.how-step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: var(--space-5); }
+.how-step h3 { margin-bottom: var(--space-2); }
+.how-num {
+  display: inline-grid; place-items: center; width: 34px; height: 34px; margin-bottom: var(--space-3);
+  border-radius: 999px; background: var(--brand); color: #fff; font-weight: 800;
+}
+
+/* --- Empty state ---------------------------------------------------------- */
+.empty-state { max-width: 640px; margin: 0 auto; }
+.empty-title { margin-bottom: var(--space-2); }
+.idea-list {
+  list-style: none; padding: 0; margin: 0 auto; width: fit-content;
+  text-align: left; display: grid; gap: 6px;
+}
+.idea-list li { position: relative; padding-left: 20px; }
+.idea-list li::before { content: "•"; position: absolute; left: 6px; color: var(--brand); font-weight: 800; }
 
 /* --- Forms ---------------------------------------------------------------- */
 .field { margin-bottom: var(--space-4); }
@@ -281,6 +302,8 @@ legend { font-weight: 700; padding: 0 6px; }
 .footer-bottom { border-top: 1px solid var(--border); margin-top: var(--space-5); padding-top: var(--space-4); display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: space-between; align-items: center; }
 .coffee { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--warn-text); background: var(--warn-bg); padding: 9px 15px; border-radius: 999px; }
 .coffee:hover { text-decoration: none; }
+.footer-apps li { display: grid; gap: 1px; }
+.footer-apps .app-desc { color: var(--text-muted); font-size: 0.82rem; }
 
 /* --- Pagination ----------------------------------------------------------- */
 .pagination { display: flex; gap: var(--space-2); justify-content: center; align-items: center; flex-wrap: wrap; margin-top: var(--space-6); }
@@ -311,7 +334,8 @@ legend { font-weight: 700; padding: 0 6px; }
   h1 { font-size: 1.9rem; }
   .grid-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .form-grid { grid-template-columns: 1fr 1fr; }
-  .footer-grid { grid-template-columns: 2fr 1fr 1fr 1fr; }
+  .footer-grid { grid-template-columns: 2fr 1fr 1fr; }
+  .how-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .stat-row { grid-template-columns: repeat(4, 1fr); }
   .header-search { display: block; }
 }
@@ -321,6 +345,7 @@ legend { font-weight: 700; padding: 0 6px; }
   .grid-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .ad-layout { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); }
   .filters { grid-template-columns: repeat(4, 1fr); }
+  .footer-grid { grid-template-columns: 2fr 1fr 1fr 1fr 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

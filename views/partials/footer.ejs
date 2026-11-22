@@ -43,6 +43,20 @@
           </ul>
         </div>
       <% } %>
+      <%# Cross-app promotion: current market's own directory is listed first. %>
+      <% if (otherApps && otherApps.length) { %>
+        <div>
+          <h3><%= t('footer.otherApps') %></h3>
+          <ul class="footer-links footer-apps">
+            <% otherApps.forEach(function (app) { %>
+              <li>
+                <a href="<%= app.href %>" target="_blank" rel="noopener"><%= t('apps.' + app.key + '.name') %></a>
+                <span class="app-desc"><%= t('apps.' + app.key + '.desc') %></span>
+              </li>
+            <% }); %>
+          </ul>
+        </div>
+      <% } %>
     </div>
     <div class="footer-bottom">
       <p class="small mb-0"><%= t('footer.rights', { year: year, siteName: site.name }) %></p>

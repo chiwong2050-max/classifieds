@@ -37,13 +37,21 @@
     "about": "About",
     "contact": "Contact",
     "marketSwitcher": "Switch market",
+    "otherApps": "Our other free apps",
     "rights": "© {year} {siteName}. All rights reserved.",
     "familySafe": "Made for local communities. No personals, no adult content."
+  },
+  "apps": {
+    "dealpass": { "name": "DealPass", "desc": "Local deals near you" },
+    "beatavo": { "name": "Beatavo", "desc": "Dance videos for kids" },
+    "localusa": { "name": "LocalUSA", "desc": "US business directory" },
+    "australiaweb": { "name": "Australia Web", "desc": "Australian business directory" }
   },
   "home": {
     "heroTitle": "Buy, sell and connect in your community",
     "heroLead": "A family-safe classifieds marketplace. No personals, no adult content — every ad is reviewed by a human before it goes live.",
     "heroPlaceholder": "What are you looking for?",
+    "browseBtn": "Browse",
     "postFreeAd": "Post a free ad →",
     "takesUnderMinute": "takes under a minute, no account needed",
     "browseCategories": "Browse categories",
@@ -54,6 +62,13 @@
     "noListings": "No listings yet",
     "beFirst": "Be the first to post in your area.",
     "postFreeAdBtn": "Post a free ad",
+    "howTitle": "How it works",
+    "howStep1Title": "Post your ad",
+    "howStep1Body": "Add a few details and photos — it's free and takes under a minute.",
+    "howStep2Title": "Verify your email",
+    "howStep2Body": "Click the link we email you. No account or password to remember.",
+    "howStep3Title": "Go live",
+    "howStep3Body": "We review your ad, then it goes live for buyers near you.",
     "popularLocations": "Popular locations",
     "whyTitle": "Why {siteName}?",
     "whyHumanTitle": "Human reviewed",
@@ -100,6 +115,56 @@
     "noResultsBody": "Nothing matches your filters here yet. Try widening your search, or post the first ad.",
     "clearFilters": "Clear filters",
     "postAnAd": "Post an ad",
+    "emptyTitle": "Be the first to post here - it's free",
+    "emptyCta": "Post a free ad",
+    "emptyIdeasTitle": "Not sure what to post? Try something like:",
+    "ideas": {
+      "default": {
+        "1": "A bike you no longer ride",
+        "2": "A sofa or table you're replacing",
+        "3": "A service you can offer locally"
+      },
+      "for-sale": {
+        "1": "A bike you no longer ride",
+        "2": "Books, games or toys the kids outgrew",
+        "3": "A piece of furniture you're replacing"
+      },
+      "jobs": {
+        "1": "A role at your business",
+        "2": "Weekend or casual help",
+        "3": "A short-term or seasonal gig"
+      },
+      "services": {
+        "1": "Mowing, cleaning or odd jobs",
+        "2": "Tutoring or lessons",
+        "3": "Something you are good at, offered locally"
+      },
+      "property-rentals": {
+        "1": "A room in a share house",
+        "2": "Your place while you travel",
+        "3": "A garage or storage space to rent out"
+      },
+      "vehicles": {
+        "1": "A car you are upgrading from",
+        "2": "A trailer, bike or scooter",
+        "3": "Spare parts or tyres"
+      },
+      "community": {
+        "1": "A local event or meetup",
+        "2": "Lost and found notices",
+        "3": "A club or group looking for members"
+      },
+      "wanted": {
+        "1": "Something you are trying to find",
+        "2": "A part or item to finish a project",
+        "3": "Help with a one-off task"
+      },
+      "pets": {
+        "1": "A pet needing a new home (rehoming)",
+        "2": "Pet gear the kids outgrew",
+        "3": "A rescue litter looking for families"
+      }
+    },
     "nearbyCities": "Nearby cities",
     "titleCategory": "{category} in {place}",
     "titleAll": "Listings in {place} - {category}",

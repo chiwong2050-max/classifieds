@@ -4,6 +4,7 @@ const config = require('../config');
 const { t, tp } = require('../config/i18n');
 const { CATEGORIES } = require('../config/categories');
 const { LOCATIONS, slugify } = require('../config/locations');
+const { appsForMarket } = require('../config/apps');
 const helpers = require('../utils/helpers');
 const urls = require('../utils/urls');
 
@@ -19,6 +20,8 @@ function localsMiddleware(req, res, next) {
   res.locals.locale = config.site.locale;
   res.locals.categories = CATEGORIES;
   res.locals.locations = LOCATIONS;
+  // Footer "Our other free apps" (current market's directory listed first).
+  res.locals.otherApps = appsForMarket(config.site.key);
   res.locals.slugify = slugify;
   res.locals.helpers = helpers;
   res.locals.urls = urls;

@@ -66,13 +66,21 @@
     </div>
     <%- include('../partials/pagination', { page: page, totalPages: totalPages, baseUrl: baseUrl, query: query }) %>
   <% } else { %>
-    <div class="card card-pad center">
-      <h3><%= t('listing.noResults') %></h3>
+    <%# Empty state: no fake listings, just an invitation plus plain-text ideas. %>
+    <% var ideaSet = ['for-sale', 'jobs', 'services', 'property-rentals', 'vehicles', 'community', 'wanted', 'pets'].indexOf(loc.category) !== -1 ? loc.category : 'default'; %>
+    <div class="card card-pad center empty-state">
+      <h3 class="empty-title"><%= t('listing.emptyTitle') %></h3>
       <p class="muted"><%= t('listing.noResultsBody') %></p>
-      <div class="row" style="justify-content:center;">
-        <a class="btn btn-outline" href="<%= baseUrl %>"><%= t('listing.clearFilters') %></a>
-        <a class="btn btn-primary" href="/post/"><%= t('listing.postAnAd') %></a>
-      </div>
+      <p class="mt-4"><a class="btn btn-primary btn-lg" href="/post/?country=<%= loc.country %>&state=<%= loc.state || '' %>&city=<%= loc.city || '' %>&category=<%= loc.category || '' %>"><%= t('listing.emptyCta') %></a></p>
+      <p class="small muted mt-6 mb-2"><%= t('listing.emptyIdeasTitle') %></p>
+      <ul class="idea-list small">
+        <li><%= t('listing.ideas.' + ideaSet + '.1') %></li>
+        <li><%= t('listing.ideas.' + ideaSet + '.2') %></li>
+        <li><%= t('listing.ideas.' + ideaSet + '.3') %></li>
+      </ul>
+      <% if (isSearch || query.q || query.priceMin || query.priceMax) { %>
+        <p class="mt-6 mb-0"><a class="small" href="<%= baseUrl %>"><%= t('listing.clearFilters') %></a></p>
+      <% } %>
     </div>
   <% } %>
 

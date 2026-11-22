@@ -4,16 +4,41 @@
   <div class="container">
     <h1><%= t('home.heroTitle') %></h1>
     <p class="lead"><%= t('home.heroLead') %></p>
+    <div class="hero-actions mt-4">
+      <a class="btn btn-primary btn-lg" href="/post/"><%= t('home.postFreeAdBtn') %></a>
+      <a class="btn btn-outline btn-lg" href="/browse/"><%= t('home.browseBtn') %></a>
+    </div>
+    <p class="small mt-4 muted"><%= t('home.takesUnderMinute') %></p>
     <form class="searchbar mt-4" role="search" action="/search" method="get">
       <label class="hidden" for="hero-q"><%= t('nav.searchListings') %></label>
       <input id="hero-q" type="search" name="q" placeholder="<%= t('home.heroPlaceholder') %>" autocomplete="off">
-      <button class="btn btn-primary" type="submit"><%= t('common.search') %></button>
+      <button class="btn btn-brand" type="submit"><%= t('common.search') %></button>
     </form>
-    <p class="small mt-4"><a href="/post/"><%= t('home.postFreeAd') %></a> &nbsp;·&nbsp; <%= t('home.takesUnderMinute') %></p>
   </div>
 </section>
 
 <div class="container mt-6">
+
+  <section class="section" aria-labelledby="how-h">
+    <div class="section-head"><h2 id="how-h"><%= t('home.howTitle') %></h2></div>
+    <ol class="how-strip">
+      <li class="how-step">
+        <span class="how-num" aria-hidden="true">1</span>
+        <h3><%= t('home.howStep1Title') %></h3>
+        <p class="muted small mb-0"><%= t('home.howStep1Body') %></p>
+      </li>
+      <li class="how-step">
+        <span class="how-num" aria-hidden="true">2</span>
+        <h3><%= t('home.howStep2Title') %></h3>
+        <p class="muted small mb-0"><%= t('home.howStep2Body') %></p>
+      </li>
+      <li class="how-step">
+        <span class="how-num" aria-hidden="true">3</span>
+        <h3><%= t('home.howStep3Title') %></h3>
+        <p class="muted small mb-0"><%= t('home.howStep3Body') %></p>
+      </li>
+    </ol>
+  </section>
 
   <section class="section" aria-labelledby="cats-h">
     <div class="section-head">
