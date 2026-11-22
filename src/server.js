@@ -30,9 +30,15 @@ app.use(
       useDefaults: true,
       directives: {
         'default-src': ["'self'"],
-        'script-src': ["'self'", 'https://challenges.cloudflare.com'],
+        'script-src': ["'self'", 'https://challenges.cloudflare.com', 'https://static.cloudflareinsights.com'],
         'frame-src': ['https://challenges.cloudflare.com'],
-        'connect-src': ["'self'", 'https://challenges.cloudflare.com'],
+        // Cloudflare Turnstile + Web Analytics (RUM beacon) endpoints.
+        'connect-src': [
+          "'self'",
+          'https://challenges.cloudflare.com',
+          'https://static.cloudflareinsights.com',
+          'https://cloudflareinsights.com',
+        ],
         'img-src': ["'self'", 'data:'],
         'style-src': ["'self'", "'unsafe-inline'"],
         // Keep https-only upgrades off for local dev over http.
@@ -72,6 +78,12 @@ app.use(
   express.static(path.join(config.root, 'public'), {
     maxAge: config.isProduction ? '7d' : 0,
     setHeaders(res, filePath) {
+      const base = path.basename(filePath);
+      // PWA entry points must always revalidate so new builds ship at once.
+      if (base === 'sw.js' || base === 'manifest.webmanifest') {
+        res.setHeader('Cache-Control', 'no-cache');
+        return;
+      }
       // User uploads are immutable-ish; cache them a little longer.
       if (filePath.includes(`${path.sep}uploads${path.sep}`)) {
         res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -79,6 +91,9 @@ app.use(
     },
   })
 );
+
+// Browsers and crawlers still ask for /favicon.ico; point them at our SVG mark.
+app.get('/favicon.ico', (req, res) => res.redirect(301, '/favicon.svg'));
 
 // --- App locals + rate limit ----------------------------------------------
 app.use(localsMiddleware);

@@ -15,6 +15,9 @@ const { t } = require('../config/i18n');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Sentinel value for the "City not listed" free-text option in the city select.
+const OTHER_CITY = '__other__';
+
 function parsePrice(body) {
   if (body.price_type === 'free') return { price_cents: null, price_type: 'free' };
   if (body.price_type === 'contact') return { price_cents: null, price_type: 'contact' };
@@ -43,6 +46,7 @@ function validate(body) {
   const country = String(body.country || config.site.country).trim().toLowerCase();
   const state = String(body.state || '').trim().toLowerCase();
   const city = String(body.city || '').trim().toLowerCase();
+  const cityOther = String(body.city_other || '').trim();
   const contactName = String(body.contact_name || '').trim();
   const contactEmail = String(body.contact_email || '').trim();
 
@@ -52,17 +56,65 @@ function validate(body) {
   if (description.length > 5000) errors.description = t('post.errorDescriptionMax');
   if (!getCategory(category)) errors.category = t('post.errorCategory');
   if (!getCountry(country)) errors.country = t('post.errorCountry');
-  if (!state || !getState(country, state)) errors.state = t('post.errorState');
-  else if (!city || !getCity(country, state, city)) errors.city = t('post.errorCity');
+  if (!state || !getState(country, state)) {
+    errors.state = t('post.errorState');
+  } else if (!city) {
+    errors.city = t('post.errorCity');
+  } else if (city === OTHER_CITY) {
+    // "City not listed" fallback: accept a free-text city so posters in small
+    // towns are never blocked by the seeded city list.
+    if (cityOther.length < 2) errors.city = t('post.errorCityOther');
+  } else if (!getCity(country, state, city)) {
+    errors.city = t('post.errorCity');
+  }
   if (!contactName) errors.contact_name = t('post.errorName');
   if (!EMAIL_RE.test(contactEmail)) errors.contact_email = t('post.errorEmail');
   if (String(body.agree || '') !== 'yes') errors.agree = t('post.errorAgree');
 
   return {
     errors,
-    values: { title, description, category, country, state, city, contactName, contactEmail },
+    values: { title, description, category, country, state, city, cityOther, contactName, contactEmail },
     hasErrors: Object.keys(errors).length > 0,
   };
+}
+
+/**
+ * Resolve the final city slug + display name. Known cities use the seeded
+ * config; the "city not listed" option stores the free-text value directly.
+ */
+function resolveCity(country, state, city, cityOther) {
+  if (city === OTHER_CITY) {
+    return { slug: slugify(cityOther) || 'other', name: cityOther };
+  }
+  const found = getCity(country, state, city);
+  return found ? { slug: found.slug, name: found.name } : null;
+}
+
+/**
+ * Multer wrapper: on an upload error (e.g. a non-image file), re-render the
+ * form with HTTP 400 instead of letting it bubble up as an unhelpful 500.
+ */
+function uploadImages(req, res, next) {
+  upload.array('images', config.uploads.maxImages)(req, res, (err) => {
+    if (err) {
+      const body = req.body || {};
+      return res.status(400).render('pages/post', {
+        title: t('post.title'),
+        metaDescription: t('post.metaDescription', { siteName: config.site.name }),
+        canonical: `${config.site.url}/post/`,
+        robots: 'noindex,follow',
+        errors: { images: err.message || t('post.errorImages') },
+        values: { ...body },
+        preselect: {
+          country: body.country || config.site.country,
+          state: body.state || '',
+          city: body.city || '',
+          category: body.category || '',
+        },
+      });
+    }
+    return next();
+  });
 }
 
 module.exports = function postRoutes(app) {
@@ -83,7 +135,7 @@ module.exports = function postRoutes(app) {
   app.post(
     '/post/',
     postLimiter,
-    upload.array('images', config.uploads.maxImages),
+    uploadImages,
     turnstileMiddleware,
     async (req, res, next) => {
       try {
@@ -124,6 +176,8 @@ module.exports = function postRoutes(app) {
         const slugBase = slugify(values.title) || 'ad';
         const slug = `${slugBase.slice(0, 60)}-${shortId(4)}`;
 
+        const place = resolveCity(values.country, values.state, values.city, values.cityOther);
+
         const payload = {
           ad: {
             public_id: shortId(),
@@ -133,8 +187,8 @@ module.exports = function postRoutes(app) {
             category: values.category,
             country: values.country,
             state: values.state,
-            city: values.city,
-            city_name: getCity(values.country, values.state, values.city).name,
+            city: place.slug,
+            city_name: place.name,
             price_cents: price.price_cents,
             price_type: price.price_type,
             currency: config.site.currency,
@@ -158,6 +212,9 @@ module.exports = function postRoutes(app) {
           metaDescription: t('verifySent.metaDescription'),
           robots: 'noindex,nofollow',
           submittedEmail: values.contactEmail,
+          // Real submissions must pass this so verify-sent.ejs does not throw.
+          // The honeypot path above sets it to true.
+          honeypotDropped: false,
         });
       } catch (err) {
         return next(err);

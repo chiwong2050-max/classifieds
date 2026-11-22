@@ -15,7 +15,12 @@ const upload = multer({
   },
   fileFilter(req, file, cb) {
     const ok = /^image\/(jpeg|png|webp|gif|avif|heic|heif|tiff)$/i.test(file.mimetype);
-    cb(ok ? null : new Error('Only image uploads are allowed.'), ok);
+    if (ok) return cb(null, true);
+    // Tag the error with status 400 so the post route can re-render the form
+    // with a helpful message instead of surfacing a generic 500.
+    const err = new Error('Only image uploads are allowed.');
+    err.status = 400;
+    return cb(err, false);
   },
 });
 

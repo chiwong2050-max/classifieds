@@ -3,11 +3,12 @@
 const config = require('../config');
 const ads = require('../db/ads');
 const { adUrl, absolute } = require('../utils/urls');
+const { provideCsrf, requireCsrf } = require('../middleware/csrf');
 const { t } = require('../config/i18n');
 
 module.exports = function manageRoutes(app) {
   // --- Manage / renew an ad via its private token ---------------------------
-  app.get('/manage/:token', (req, res) => {
+  app.get('/manage/:token', provideCsrf, (req, res) => {
     const ad = ads.getByManageToken(req.params.token);
     if (!ad) {
       return res.status(404).render('pages/error', {
@@ -31,7 +32,7 @@ module.exports = function manageRoutes(app) {
   });
 
   // --- Renew -----------------------------------------------------------------
-  app.post('/manage/:token/renew', (req, res) => {
+  app.post('/manage/:token/renew', requireCsrf, (req, res) => {
     const renewed = ads.renewAd(req.params.token);
     if (!renewed) {
       return res.status(404).render('pages/error', {

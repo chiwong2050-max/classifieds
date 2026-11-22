@@ -2,7 +2,7 @@
 <div class="container mt-4">
   <div class="section-head">
     <h1 class="mb-0"><%= t('admin.dashboardTitle') %></h1>
-    <form method="post" action="/admin/logout"><button class="btn btn-outline btn-sm" type="submit"><%= t('admin.signOut') %></button></form>
+    <form method="post" action="/admin/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-outline btn-sm" type="submit"><%= t('admin.signOut') %></button></form>
   </div>
 
   <div class="stat-row mb-4">
@@ -70,7 +70,7 @@
                 <td class="small"><%= helpers.timeAgo(r.created_at) %></td>
                 <td>
                   <% if (r.handled) { %><span class="badge badge-active"><%= t('admin.handled') %></span><% } else { %>
-                    <form method="post" action="/admin/reports/<%= r.id %>/handle"><button class="btn btn-sm btn-outline" type="submit"><%= t('admin.markHandled') %></button></form>
+                    <form method="post" action="/admin/reports/<%= r.id %>/handle"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-sm btn-outline" type="submit"><%= t('admin.markHandled') %></button></form>
                   <% } %>
                 </td>
               </tr>

@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS ads (
   city_name     TEXT    NOT NULL,
   price_cents   INTEGER,                          -- NULL when not applicable
   price_type    TEXT    NOT NULL DEFAULT 'fixed', -- fixed | negotiable | free | contact
-  currency      TEXT    NOT NULL DEFAULT 'AUD',
+  -- Set per-insert from the market's currency (USD on the US site, AUD on the
+  -- AU site); there is no hardcoded default so ads always match their market.
+  currency      TEXT    NOT NULL,
   attrs         TEXT NOT NULL DEFAULT '{}',       -- category-specific JSON
   contact_name  TEXT    NOT NULL,
   contact_email TEXT    NOT NULL,                 -- never rendered publicly

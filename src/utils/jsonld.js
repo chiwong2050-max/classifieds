@@ -44,7 +44,7 @@ function breadcrumbJsonLd(items) {
 function productJsonLd(ad, images = []) {
   const offers = {
     '@type': 'Offer',
-    priceCurrency: ad.currency || 'AUD',
+    priceCurrency: ad.currency || config.site.currency,
     availability: 'https://schema.org/InStock',
     url: absolute(adUrl(ad)),
   };
@@ -54,7 +54,7 @@ function productJsonLd(ad, images = []) {
     offers.price = (ad.price_cents / 100).toFixed(2);
   } else {
     delete offers.price;
-    offers.priceSpecification = { '@type': 'PriceSpecification', priceCurrency: ad.currency || 'AUD' };
+    offers.priceSpecification = { '@type': 'PriceSpecification', priceCurrency: ad.currency || config.site.currency };
   }
 
   return toSafeJson({

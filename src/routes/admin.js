@@ -5,12 +5,13 @@ const ads = require('../db/ads');
 const mailer = require('../services/mailer');
 const { requireAdmin, checkPassword, adminConfigured } = require('../middleware/adminAuth');
 const { adminLoginLimiter } = require('../middleware/rateLimit');
+const { provideCsrf, requireCsrf } = require('../middleware/csrf');
 const { adUrl, absolute } = require('../utils/urls');
 const { t } = require('../config/i18n');
 
 module.exports = function adminRoutes(app) {
   // --- Login ----------------------------------------------------------------
-  app.get('/admin/login', (req, res) => {
+  app.get('/admin/login', provideCsrf, (req, res) => {
     if (req.session && req.session.isAdmin) return res.redirect('/admin');
     res.render('pages/admin/login', {
       title: t('admin.signIn'),
@@ -22,7 +23,7 @@ module.exports = function adminRoutes(app) {
     });
   });
 
-  app.post('/admin/login', adminLoginLimiter, (req, res) => {
+  app.post('/admin/login', adminLoginLimiter, requireCsrf, (req, res) => {
     if (!adminConfigured()) {
       return res.status(500).render('pages/admin/login', {
         title: t('admin.signIn'),
@@ -47,13 +48,13 @@ module.exports = function adminRoutes(app) {
     });
   });
 
-  app.post('/admin/logout', (req, res) => {
+  app.post('/admin/logout', requireCsrf, (req, res) => {
     if (req.session) req.session.isAdmin = false;
     res.redirect('/admin/login');
   });
 
   // --- Dashboard ------------------------------------------------------------
-  app.get('/admin', requireAdmin, (req, res) => {
+  app.get('/admin', requireAdmin, provideCsrf, (req, res) => {
     const status = ['pending', 'active', 'rejected', 'expired'].includes(req.query.status) ? req.query.status : 'pending';
     const list = ads.listForAdmin(status, { limit: 100 });
     res.render('pages/admin/dashboard', {
@@ -69,7 +70,7 @@ module.exports = function adminRoutes(app) {
   });
 
   // --- Ad review ------------------------------------------------------------
-  app.get('/admin/ads/:id', requireAdmin, (req, res) => {
+  app.get('/admin/ads/:id', requireAdmin, provideCsrf, (req, res) => {
     const ad = ads.getById(parseInt(req.params.id, 10));
     if (!ad) {
       return res.status(404).render('pages/error', {
@@ -89,7 +90,7 @@ module.exports = function adminRoutes(app) {
     });
   });
 
-  app.post('/admin/ads/:id/approve', requireAdmin, async (req, res, next) => {
+  app.post('/admin/ads/:id/approve', requireAdmin, requireCsrf, async (req, res, next) => {
     try {
       const ad = ads.getById(parseInt(req.params.id, 10));
       if (!ad) return res.status(404).end();
@@ -105,7 +106,7 @@ module.exports = function adminRoutes(app) {
     }
   });
 
-  app.post('/admin/ads/:id/reject', requireAdmin, async (req, res, next) => {
+  app.post('/admin/ads/:id/reject', requireAdmin, requireCsrf, async (req, res, next) => {
     try {
       const ad = ads.getById(parseInt(req.params.id, 10));
       if (!ad) return res.status(404).end();
@@ -119,7 +120,7 @@ module.exports = function adminRoutes(app) {
   });
 
   // --- Reports --------------------------------------------------------------
-  app.post('/admin/reports/:id/handle', requireAdmin, (req, res) => {
+  app.post('/admin/reports/:id/handle', requireAdmin, requireCsrf, (req, res) => {
     ads.markReportHandled(parseInt(req.params.id, 10), true);
     res.redirect('/admin#reports');
   });

@@ -61,9 +61,11 @@
       <div class="card card-pad stack">
         <h2 class="small"><%= t('admin.decision') %></h2>
         <form method="post" action="/admin/ads/<%= ad.id %>/approve">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <button class="btn btn-primary btn-block" type="submit"><%= t('admin.approve') %></button>
         </form>
         <form method="post" action="/admin/ads/<%= ad.id %>/reject">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <div class="field">
             <label for="reason"><%= t('admin.rejectReasonLabel') %></label>
             <textarea id="reason" name="reason" style="min-height:80px;" maxlength="500" placeholder="<%= t('admin.rejectReasonPlaceholder') %>"></textarea>

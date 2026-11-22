@@ -87,15 +87,27 @@
     var countrySel = document.querySelector('[data-country]');
     var stateSel = document.querySelector('[data-state]');
     var citySel = document.querySelector('[data-city]');
+    var cityOther = document.querySelector('[data-city-other]');
     if (!countrySel || !stateSel || !citySel) return;
 
     var chooseLabel = stateSel.dataset.chooseLabel || 'Choose…';
+    var otherLabel = citySel.dataset.otherLabel || "City not listed";
 
     var desired = {
       country: countrySel.value,
       state: stateSel.dataset.value || stateSel.value,
       city: citySel.dataset.value || citySel.value,
     };
+
+    // Show the free-text city field only when "City not listed" is chosen so
+    // posters in unlisted towns are never blocked.
+    function applyCityOther() {
+      if (!cityOther) return;
+      var isOther = citySel.value === '__other__';
+      cityOther.hidden = !isOther;
+      var input = cityOther.querySelector('input');
+      if (input) input.required = isOther;
+    }
 
     fetch('/api/locations', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.json(); })
@@ -116,14 +128,20 @@
           var country = data[countrySel.value];
           var state = country && country.regions[stateSel.value];
           citySel.innerHTML = '<option value="">' + chooseLabel + '</option>';
-          if (!state) return;
-          state.cities.forEach(function (name) {
-            var opt = document.createElement('option');
-            opt.value = slugify(name);
-            opt.textContent = name;
-            citySel.appendChild(opt);
-          });
+          if (state) {
+            state.cities.forEach(function (name) {
+              var opt = document.createElement('option');
+              opt.value = slugify(name);
+              opt.textContent = name;
+              citySel.appendChild(opt);
+            });
+          }
+          var otherOpt = document.createElement('option');
+          otherOpt.value = '__other__';
+          otherOpt.textContent = otherLabel;
+          citySel.appendChild(otherOpt);
           if (desired.city) citySel.value = desired.city;
+          applyCityOther();
         }
 
         fillStates();
@@ -139,6 +157,7 @@
           desired.city = '';
           fillCities();
         });
+        citySel.addEventListener('change', applyCityOther);
       })
       .catch(function () { /* no-JS fallback: selects keep server-rendered options */ });
   }

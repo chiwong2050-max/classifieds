@@ -2,6 +2,7 @@
 
 const db = require('./index');
 const { shortId, randomToken, sqliteNow, sqliteNowPlusDays } = require('../utils/helpers');
+const { toFtsPhrase } = require('./ftsQuery');
 const config = require('../config');
 
 // ---------------------------------------------------------------------------
@@ -127,7 +128,7 @@ function getPrimaryImage(adId) {
 // Listing / search
 // ---------------------------------------------------------------------------
 
-function buildFilterSql(filters, params, { useFts }) {
+function buildFilterSql(filters, params, { useFts, ftsPhrase }) {
   const clauses = ["a.status = 'active'"];
   if (filters.country) { clauses.push('a.country = @country'); params.country = filters.country; }
   if (filters.state) { clauses.push('a.state = @state'); params.state = filters.state; }
@@ -143,8 +144,10 @@ function buildFilterSql(filters, params, { useFts }) {
     params.priceMax = filters.priceMax;
   }
   if (useFts) {
+    // ftsPhrase is pre-escaped (see ftsQuery.toFtsPhrase) so user input is
+    // matched as a literal phrase, never as FTS5 syntax.
     clauses.push('ads_fts MATCH @q');
-    params.q = filters.q;
+    params.q = ftsPhrase;
   }
   return clauses.join(' AND ');
 }
@@ -161,8 +164,11 @@ const SORTS = {
  */
 function searchAds(filters = {}, { limit = 24, offset = 0, sort = 'recent' } = {}) {
   const params = {};
-  const useFts = Boolean(filters.q && String(filters.q).trim());
-  const where = buildFilterSql(filters, params, { useFts });
+  // Escape the user's query into a literal FTS5 phrase before it reaches
+  // `MATCH`, otherwise FTS operators crash the /search page.
+  const ftsPhrase = toFtsPhrase(filters.q);
+  const useFts = Boolean(ftsPhrase);
+  const where = buildFilterSql(filters, params, { useFts, ftsPhrase });
   const orderBy = SORTS[sort] || SORTS.recent;
 
   const from = useFts

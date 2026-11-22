@@ -26,7 +26,7 @@
     "next": "Next ›"
   },
   "footer": {
-    "intro": "{tagline}. A family-safe place to buy, sell and connect. Every ad is reviewed before it goes live.",
+    "intro": "{tagline} A family-safe place to buy, sell and connect. Every ad is reviewed before it goes live.",
     "buyMeACoffee": "Buy me a coffee",
     "browse": "Browse",
     "company": "Company",
@@ -79,7 +79,7 @@
     "whyEmailBody": "Buyers contact you through a relay form — your email stays private.",
     "whyFreeTitle": "Free to post",
     "whyFreeBody": "No account required. Verify by email and you are live.",
-    "metaDescription": "{tagline}. Browse jobs, cars, homes, services and more across {countryName}. No personals or adult content - every ad is reviewed."
+    "metaDescription": "{tagline} Browse jobs, cars, homes, services and more across {countryName}. No personals or adult content - every ad is reviewed."
   },
   "browse": {
     "title": "Browse categories and locations",
@@ -267,6 +267,9 @@
     "country": "Country",
     "stateRegion": "State / region",
     "city": "City",
+    "cityNotListed": "City not listed",
+    "cityOtherLabel": "Enter your city",
+    "cityOtherPlaceholder": "e.g. Your town",
     "yourDetails": "Your details",
     "yourName": "Your name",
     "email": "Email",
@@ -283,6 +286,8 @@
     "errorCountry": "Please choose a country.",
     "errorState": "Please choose a state or region.",
     "errorCity": "Please choose a city.",
+    "errorCityOther": "Please enter your city.",
+    "errorImages": "Only image uploads are allowed.",
     "errorName": "Please enter your name.",
     "errorEmail": "Please enter a valid email address.",
     "errorAgree": "You must agree to the terms and safety policy."
@@ -333,6 +338,7 @@
     "genericTitle": "Something went wrong",
     "genericBody": "An unexpected error occurred. Please try again in a moment.",
     "requestFailed": "Request could not be completed.",
+    "csrfFailed": "Your session expired. Please go back and try again.",
     "verifyFailedTitle": "Verification failed",
     "verifyFailedBody": "We could not verify that you are human. Please try again.",
     "linkExpiredTitle": "Link expired",
