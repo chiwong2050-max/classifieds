@@ -2,7 +2,7 @@
 
 const config = require('../config');
 const ads = require('../db/ads');
-const { LOCATIONS } = require('../config/locations');
+const { LOCATIONS, locations } = require('../config/locations');
 const { websiteJsonLd } = require('../utils/jsonld');
 const { t } = require('../config/i18n');
 
@@ -13,8 +13,9 @@ module.exports = function pageRoutes(app) {
     const counts = ads.categoryCounts({ country });
     const { rows: recent } = ads.searchAds({ country }, { limit: 8 });
 
-    const states = LOCATIONS[country]
-      ? Object.entries(LOCATIONS[country].regions).map(([slug, s]) => ({ slug, name: s.name }))
+    const current = locations()[country];
+    const states = current
+      ? Object.entries(current.regions).map(([slug, s]) => ({ slug, name: s.name }))
       : [];
 
     res.render('pages/home', {

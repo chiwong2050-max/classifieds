@@ -8,11 +8,17 @@
   <link rel="canonical" href="<%= canonical %>">
   <meta name="robots" content="<%= robots %>">
 
-  <% var alternates = site.alternates || []; %>
+  <%
+    var alternates = site.alternates || [];
+    // The equivalent path on other markets (falls back to the home page for
+    // location-scoped URLs, which only exist on their own market).
+    var altPath = (typeof alternatePath !== 'undefined' && alternatePath) ? alternatePath : '/';
+    var xDefault = (alternates.filter(function (a) { return a.key === 'us'; })[0] || { url: site.url }).url;
+  %>
   <% alternates.forEach(function (alt) { %>
-  <link rel="alternate" hreflang="<%= alt.hreflang %>" href="<%= alt.url %>/">
+  <link rel="alternate" hreflang="<%= alt.hreflang %>" href="<%= alt.url %><%= altPath %>">
   <% }); %>
-  <% if (alternates.length) { %><link rel="alternate" hreflang="x-default" href="<%= alternates[0].url %>/"><% } %>
+  <% if (alternates.length) { %><link rel="alternate" hreflang="x-default" href="<%= xDefault %><%= altPath %>"><% } %>
 
   <meta property="og:type" content="<%= typeof ogType !== 'undefined' ? ogType : 'website' %>">
   <meta property="og:site_name" content="<%= site.name %>">

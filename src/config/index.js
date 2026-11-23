@@ -5,21 +5,27 @@
  *
  * Multi-market model
  * ------------------
- * One codebase powers several independent classifieds *markets* (e.g. an
- * Australian site and a US site). Each market is described by a small JSON
- * file in `src/config/sites/<key>.json` and gets its own branding, currency,
- * locale, date/units format, database file and seeded list of regions/cities.
+ * One Node process serves every market. The active market for a request is
+ * chosen from the `Host` header (see `src/config/market.js`) and published on
+ * an AsyncLocalStorage slot (see `src/config/context.js`). `config.site` is a
+ * getter: inside a request it returns that request's market, and outside one
+ * (CLI scripts, startup, maintenance) it returns the default market below.
  *
- * Which market to run is chosen at start-up via the `SITE` (or `SITE_KEY`)
- * environment variable. Point `SITE_CONFIG` at an absolute path to load a
- * custom market file instead. Individual values can still be overridden with
- * environment variables, so the same build works on different domains with
- * separate databases without any code changes.
+ * The default market is only a fallback. It is chosen by `SITE`/`SITE_KEY`
+ * (default `us`) and may be tweaked with environment overrides — these apply
+ * for local development, not to the other host-resolved markets.
+ *
+ * `SITE_CONFIG` still works: point it at a JSON file to override the default
+ * market's descriptor values (handy for a bespoke local setup).
  */
 
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
+
+const context = require('./context');
+const { siteFor, DEFAULT_CODE } = require('./market');
+const { getCountry } = require('./countries');
 
 // Load .env from the project root (silent if it doesn't exist).
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -34,71 +40,23 @@ const int = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-/** First defined, non-empty value from the list (env override helper). */
-const pick = (...values) => {
-  for (const value of values) {
-    if (value !== undefined && value !== null && value !== '') return value;
-  }
-  return undefined;
-};
-
 const ROOT = path.resolve(__dirname, '../..');
-const SITES_DIR = path.join(__dirname, 'sites');
 
-// Which market are we running as?
-const MARKET_KEY = String(pick(process.env.SITE, process.env.SITE_KEY, 'au')).toLowerCase();
+// --- Default (fallback) market ---------------------------------------------
+const defaultSite = siteFor(DEFAULT_CODE, { applyEnv: true });
 
-/** Resolve and read the market JSON file (built-in or a custom SITE_CONFIG path). */
-function loadMarket(key) {
-  const custom = process.env.SITE_CONFIG;
-  const file = custom
-    ? path.resolve(ROOT, custom)
-    : path.join(SITES_DIR, `${key}.json`);
-
-  if (!fs.existsSync(file)) {
-    const available = fs.existsSync(SITES_DIR)
-      ? fs.readdirSync(SITES_DIR).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''))
-      : [];
-    throw new Error(
-      `Unknown market "${key}". No config at ${file}. ` +
-      `Available markets: ${available.join(', ') || '(none)'}. ` +
-      'Set SITE=<key> or SITE_CONFIG=<path>.'
-    );
-  }
-
-  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  return { ...raw, key: raw.key || key };
+if (!getCountry(defaultSite.country)) {
+  throw new Error(`Unknown market "${defaultSite.country}". Set SITE=<iso code> or SITE_KEY=<iso code>.`);
 }
 
-const market = loadMarket(MARKET_KEY);
-
-// Environment overrides sit on top of the market file so deployments can tweak
-// a value without editing the file (e.g. SITE_URL for the live domain).
-const site = {
-  key: market.key,
-  name: pick(process.env.SITE_NAME, market.name, 'ListNear'),
-  tagline: pick(process.env.SITE_TAGLINE, market.tagline, 'Buy, sell, jobs, services and more near you.'),
-  country: String(pick(process.env.SITE_COUNTRY, process.env.DEFAULT_COUNTRY, market.country, 'au')).toLowerCase(),
-  countryName: pick(process.env.SITE_COUNTRY_NAME, market.countryName, 'Australia'),
-  currency: String(pick(process.env.SITE_CURRENCY, process.env.DEFAULT_CURRENCY, market.currency, 'AUD')).toUpperCase(),
-  locale: pick(process.env.SITE_LOCALE, process.env.LOCALE, market.locale, 'en-AU'),
-  language: String(pick(process.env.SITE_LANGUAGE, process.env.DEFAULT_LANGUAGE, market.language, 'en')).toLowerCase(),
-  dateFormat: pick(process.env.SITE_DATE_FORMAT, market.dateFormat, 'D MMM YYYY'),
-  units: String(pick(process.env.SITE_UNITS, market.units, 'metric')).toLowerCase(),
-  url: String(pick(process.env.SITE_URL, market.url, 'http://localhost:3000')).replace(/\/+$/, ''),
-  database: pick(process.env.DB_PATH, market.database, 'data/listnear.sqlite'),
-  supportUrl: pick(process.env.SUPPORT_URL, process.env.BUYMEACOFFEE_URL, market.supportUrl, ''),
-  contactEmail: pick(process.env.SITE_CONTACT_EMAIL, market.contactEmail, ''),
-  emergencyNumber: pick(process.env.EMERGENCY_NUMBER, market.emergencyNumber, ''),
-  // Sibling markets (same codebase, other domains) used for the footer
-  // switcher and `hreflang` alternates. Includes this market itself.
-  alternates: Array.isArray(market.alternates) ? market.alternates : [],
-  // Seeded country > region > city hierarchy for this market.
-  regions: market.regions || {},
-};
-
-// Distance unit derived from the market's measurement system.
-site.distanceUnit = site.units === 'imperial' ? 'mi' : 'km';
+// Optional bespoke overlay for the default market only.
+if (process.env.SITE_CONFIG) {
+  const file = path.resolve(ROOT, process.env.SITE_CONFIG);
+  if (!fs.existsSync(file)) throw new Error(`SITE_CONFIG not found: ${file}`);
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  Object.assign(defaultSite, raw, { key: raw.key || defaultSite.key });
+  if (raw.regions) defaultSite.regions = raw.regions;
+}
 
 /** Tiny token-based date formatter driven by `site.dateFormat`. */
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -131,8 +89,6 @@ const config = {
   host: process.env.HOST || '127.0.0.1',
   root: ROOT,
 
-  // Active market descriptor (branding, locale, currency, regions, database).
-  site,
   formatDateTokens,
 
   session: {
@@ -180,5 +136,22 @@ const config = {
     },
   },
 };
+
+/**
+ * The active market. Resolves from the request context when inside a request,
+ * otherwise the default market. Kept as a live getter so existing
+ * `config.site.*` reads stay correct across markets with no call-site changes.
+ */
+Object.defineProperty(config, 'site', {
+  enumerable: true,
+  configurable: true,
+  get() {
+    const ctx = context.current();
+    return ctx && ctx.site ? ctx.site : defaultSite;
+  },
+});
+
+/** Expose the fallback market for scripts and the market middleware. */
+config.defaultSite = defaultSite;
 
 module.exports = config;

@@ -1,0 +1,17 @@
+<%- include('../partials/head') %>
+<div class="container mt-6">
+  <div class="card card-pad center prose" style="max-width:60ch;margin:0 auto;">
+    <h1><%= t('comingSoon.heading', { countryName: site.countryName }) %></h1>
+    <p class="muted"><%= t('comingSoon.body', { siteName: site.name, countryName: site.countryName }) %></p>
+    <% var liveMarkets = markets || []; %>
+    <% if (liveMarkets.length) { %>
+      <p class="muted"><%= t('comingSoon.pickMarket') %></p>
+      <div class="row" style="justify-content:center;flex-wrap:wrap;">
+        <% liveMarkets.forEach(function (m) { %>
+          <a class="btn btn-outline btn-sm" href="<%= m.url %>" hreflang="<%= m.hreflang %>"><%= m.label %></a>
+        <% }); %>
+      </div>
+    <% } %>
+  </div>
+</div>
+<%- include('../partials/foot') %>

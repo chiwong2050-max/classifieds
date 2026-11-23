@@ -18,7 +18,9 @@
     <%- t('legal.safety.sellingBody') %>
 
     <h2><%= t('legal.safety.emergencyH') %></h2>
-    <p><%- t('legal.safety.emergencyBody', { countryName: site.countryName, emergency: site.emergencyNumber }) %></p>
+    <p><%- site.emergencyNumber
+      ? t('legal.safety.emergencyBody', { countryName: site.countryName, emergency: site.emergencyNumber })
+      : t('legal.safety.emergencyBodyGeneric') %></p>
   </article>
 </div>
 <%- include('../partials/foot') %>

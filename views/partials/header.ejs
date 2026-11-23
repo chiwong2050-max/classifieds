@@ -14,6 +14,25 @@
     </form>
 
     <nav class="header-nav" aria-label="<%= t('nav.main') %>">
+      <% if (site.alternates && site.alternates.length > 1) { %>
+        <details class="market-picker">
+          <summary>
+            <span class="hidden"><%= t('nav.changeMarket') %></span>
+            <span class="market-picker-label"><%= site.countryName %></span>
+          </summary>
+          <ul class="market-menu">
+            <% site.alternates.forEach(function (alt) { %>
+              <li>
+                <% if (alt.key === site.key) { %>
+                  <span class="market-current" aria-current="true"><%= alt.label %></span>
+                <% } else { %>
+                  <a href="<%= alt.url %>" hreflang="<%= alt.hreflang %>"><%= alt.label %></a>
+                <% } %>
+              </li>
+            <% }); %>
+          </ul>
+        </details>
+      <% } %>
       <a class="navlink" href="/browse/"><%= t('nav.browse') %></a>
       <% if (isAdmin) { %><a class="navlink" href="/admin"><%= t('nav.admin') %></a><% } %>
       <a class="btn btn-primary btn-sm" href="/post/"><%= t('nav.postAd') %></a>

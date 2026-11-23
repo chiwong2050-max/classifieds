@@ -8,17 +8,11 @@ const db = require('./index');
  *
  * Replaces the default in-memory store so logins survive restarts. Sessions
  * live in the market's existing database (data/<market>.sqlite) in a dedicated
- * `sessions` table - no extra file and no extra dependency. Expired rows are
- * skipped on read and pruned periodically by the server's maintenance task.
+ * `sessions` table - no extra file and no extra dependency. The table is
+ * created by the shared schema (src/db/schema.sql) for every market database.
+ * Expired rows are skipped on read and pruned periodically by the server's
+ * maintenance task.
  */
-db.exec(`
-  CREATE TABLE IF NOT EXISTS sessions (
-    sid    TEXT PRIMARY KEY,
-    sess   TEXT    NOT NULL,
-    expire INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expire);
-`);
 
 /** Absolute expiry (ms) for an express-session session object. */
 function expiryOf(sess) {

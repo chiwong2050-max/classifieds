@@ -14,6 +14,7 @@
     "searchListings": "Search listings",
     "searchPlaceholder": "Search listings…",
     "main": "Main",
+    "changeMarket": "Change country",
     "skipToContent": "Skip to content"
   },
   "breadcrumb": {
@@ -459,7 +460,8 @@
       "sellingH": "Selling safely",
       "sellingBody": "<ul><li>Keep your email private — use our relay contact form.</li><li>Remove any personal details from photos (number plates, documents, house numbers).</li><li>Ask buyers to confirm a time before meeting.</li></ul>",
       "emergencyH": "Emergencies",
-      "emergencyBody": "In an emergency, always contact your local emergency services first (in {countryName}, call <strong>{emergency}</strong>)."
+      "emergencyBody": "In an emergency, always contact your local emergency services first (in {countryName}, call <strong>{emergency}</strong>).",
+      "emergencyBodyGeneric": "In an emergency, always contact your local emergency services first."
     },
     "about": {
       "title": "About {siteName}",
@@ -470,7 +472,7 @@
       "safetyH": "Family-safe by design",
       "safetyBody": "There are no personals, dating or adult categories, and no gambling, weapons or drug listings. An automated keyword filter flags anything suspicious and our moderators review every report.",
       "communityH": "Built for local communities",
-      "communityBody": "We run a separate site for each country, so listings, prices and locations always feel local. Today we operate a United States site and an Australia site.",
+      "communityBody": "We run a separate site for each country, so listings, prices and locations always feel local. We add new countries as soon as we have a full, accurate list of their regions and cities.",
       "contactH": "Get in touch",
       "contactBody": "Questions, feedback or a partnership idea? Email us at <a href=\"mailto:{email}\">{email}</a>."
     },
@@ -485,6 +487,13 @@
       "safetyH": "Reporting a problem",
       "safetyBody": "To report a specific ad, use the <strong>Report this ad</strong> button on that ad - our moderators review every report. For urgent safety concerns, contact your local emergency services first."
     }
+  },
+  "comingSoon": {
+    "title": "Coming soon - {siteName}",
+    "metaDescription": "{siteName} is coming soon. ListNear is expanding to {countryName}.",
+    "heading": "ListNear is coming to {countryName}",
+    "body": "We are building a local marketplace for {countryName} with accurate regions and cities. {siteName} will open here soon.",
+    "pickMarket": "In the meantime, browse one of our live markets:"
   },
   "categories": {
     "for-sale": { "name": "For Sale", "blurb": "Second-hand and new goods." },

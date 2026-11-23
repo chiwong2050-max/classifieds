@@ -13,12 +13,14 @@ the big generalists while keeping the experience clean, fast and trustworthy.
   filter auto-flags spam, adult, gambling/casino, weapons and drugs.
 - **No personals / dating / adult categories at all.** Not a toggle — the
   category set simply doesn't contain them.
-- **Multi-market engine** — one codebase runs several independent sites on
-  different domains, each with its own branding, currency, locale, date/units
-  format and database. Ships with a **US** market
-  ([listnear.app](https://listnear.app)) and an **Australia** market
-  ([au.listnear.app](https://au.listnear.app)), linked by a footer market
-  switcher and `hreflang` alternates.
+- **Multi-market engine, one process** — a single Node process serves **every
+  Google AdSense-supported country/territory**. The United States runs on
+  [listnear.app](https://listnear.app); every other country runs on its own
+  country subdomain, e.g. **Australia** at
+  [au.listnear.app](https://au.listnear.app). The market is resolved from the
+  request's `Host` header — each market gets its own branding, currency, locale,
+  date/units format and database. Markets are linked by a header country picker,
+  a footer switcher and path-equivalent `hreflang` alternates.
 
 ---
 
@@ -65,7 +67,8 @@ No React. No client-side framework. Pages are just HTML.
 7. **SEO** — `sitemap.xml` generated from live ads and category/location pages,
    JSON-LD (`WebSite`, `BreadcrumbList`, `Product`, `JobPosting`), canonical
    URLs, Open Graph tags, per-market `robots.txt`, and `hreflang` alternates
-   linking the US and AU home pages.
+   across all live markets — each alternate points at the **equivalent path**
+   (e.g. `https://au.listnear.app/about/`), with `x-default` pointing at the US.
 8. **Abuse protection** — rate limiting (post/contact/login), a honeypot field
    and a Cloudflare Turnstile placeholder (site key/secret via env; disabled
    when unset).
@@ -80,51 +83,85 @@ No React. No client-side framework. Pages are just HTML.
 
 ## Multi-market sites
 
-The same codebase can run as several separate classifieds sites — for example a
-US site and an Australian site — on different domains, each with its own
-database and its own wording.
+**One process serves every market.** The market is detected per request from the
+`Host` header, so no process-wide `SITE=` env is needed in production.
 
-A **market** is a small JSON file in [`src/config/sites/`](src/config/sites)
-(`au.json`, `us.json`, …) that defines:
+- **United States** → `https://listnear.app` (apex; `www` 301s to the apex).
+- **Every other country** → `https://<cc>.listnear.app` (e.g. `au`, `gb`, `jp`).
+
+The resolved market is published on an `AsyncLocalStorage` slot
+([`src/config/context.js`](src/config/context.js)) so config, i18n, the location
+hierarchy and the database all follow it. `config.site` is a live getter:
+inside a request it returns that request's market; outside one (CLI scripts,
+start-up, maintenance) it returns the **default market** (`SITE`/`SITE_KEY`,
+default `us`) — which is only a local-dev fallback.
+
+Host rules ([`src/config/market.js`](src/config/market.js)):
+
+| Host | Behaviour |
+| ---- | --------- |
+| `listnear.app` | US market (apex). |
+| `www.listnear.app` | 301 → `listnear.app`. |
+| `<cc>.listnear.app` | That country's market (e.g. `au.listnear.app`). |
+| `us.listnear.app` | 301 → `listnear.app` (US is apex-only). |
+| `uk.listnear.app` | 301 → `gb.listnear.app` (`uk` is an alias; ISO code is `gb`). |
+| `www`, `mail`, `admin`, `api`, `static`, `cdn`, `m`, `dev`, `staging`, `origin`, `ns`, `ftp`, `smtp` | Reserved — never a country; 404. |
+| Any other undeclared subdomain | 404. |
+| Anything off the root domain (localhost, IP, proxy) | Default market (local dev). |
+
+### The country catalogue
+
+[`src/config/countries.js`](src/config/countries.js) is the **single source of
+truth**: one entry per Google AdSense-supported country/territory. Each entry
+provides:
 
 | Field | Example | Purpose |
 | ----- | ------- | ------- |
-| `key` | `au` | Market identifier. |
-| `name` / `tagline` | `ListNear` | Branding shown across the UI. |
-| `country` / `countryName` | `au` / `Australia` | Country slug used in URLs (`/au/...`) and location data. |
-| `currency` | `AUD` | Default currency for new ads. |
-| `locale` / `language` | `en-AU` / `en` | Locale file selection and date/price formatting. |
-| `dateFormat` | `D MMM YYYY` | Date pattern (`D MMM YYYY` vs `MMM D, YYYY`). |
-| `units` | `metric` | Measurement system: `metric` (km) or `imperial` (mi). |
-| `url` | `https://au.listnear.app` | Public base URL (canonicals, links, sitemap). |
-| `database` | `data/au.sqlite` | Per-market SQLite file. |
-| `contactEmail` | `support@listnear.app` | Address shown on the `/contact` page. |
-| `supportUrl` / `emergencyNumber` | — | Footer support link and the safety page's emergency number. |
-| `alternates` | `[{ key, hreflang, label, url }]` | Sibling markets for the footer switcher and `hreflang` tags. |
-| `regions` | `{ vic: { name, cities: [...] } }` | Seeded `region > city` hierarchy for that market. |
+| `code` | `au` | ISO 3166-1 alpha-2 (lowercase) — the subdomain, except US. |
+| `name` / `nativeName` | `Australia` / `Deutschland` | English short name + optional local name for the picker. |
+| `subdomain` | `au` (`null` for US) | Host label; US is apex-only. |
+| `url` | `https://au.listnear.app` | Canonical origin, no trailing slash. |
+| `currency` | `AUD` | ISO 4217 currency for new ads. |
+| `locale` / `language` | `en-AU` / `en` | Locale for formatting and the base locale file. |
+| `languages` | `['en']` | UI languages the market may use later (hooks only). |
+| `dateFormat` | `D MMM YYYY` | Optional override; otherwise `Intl.DateTimeFormat` with `locale`. |
+| `phone` | `{ dialCode: '+61', example: '...' }` | ITU E.164 dial code (safety/contact pages). |
+| `units` | `metric` / `imperial` | Distance units (US is imperial). |
+| `emergencyNumber` | `000`, `911`, `112` | Real national emergency number, or blank if none. |
+| `contactEmail` | `support@listnear.app` | Address on the `/contact` page. |
+| `supportUrl` | `https://buymeacoffee.com/aussieloo?ref=listnear` | Footer support link. |
+| `enabled` | `true` / `false` | Feature flag — see below. |
+| `regions` | `{ vic: { name, cities: [...] } }` | Seeded real `region > city` hierarchy. |
 
-**Run a market** by selecting it at start-up:
+Region/city seeds live in [`src/config/regions.js`](src/config/regions.js),
+keyed by country code. **Real public data only** — provenance and licence are
+recorded in [SOURCES.md](SOURCES.md).
 
-```bash
-SITE=au npm start        # AU site  -> https://au.listnear.app  (data/au.sqlite)
-SITE=us npm start        # US site  -> https://listnear.app     (data/us.sqlite)
-```
+### Enabled vs coming-soon
 
-- Point `SITE_CONFIG` at any path to load a custom market file instead of a
-  built-in one.
-- Every value can be overridden with environment variables (`SITE_NAME`,
-  `SITE_CURRENCY`, `SITE_URL`, `DB_PATH`, `SITE_LOCALE`, …), so the same build
-  serves different domains with separate databases and no code changes.
-- Deploy each market as its own process/container with its own `SITE` (or
-  `SITE_CONFIG`), `SITE_URL`, `DB_PATH` and volume.
+Every country is **catalogued**, but a market is only served when it has a real
+region/city list. Countries without one stay `enabled: false` and render a
+"coming soon" page (HTTP 200, `noindex,follow`) that links to the live markets —
+never mock listings. The US (all 50 states + DC) and Australia are enabled, plus
+a curated set of high-traffic markets; the rest enable as data is added. To
+enable a country, add its regions to `regions.js` (and flip `enabled` in the
+catalogue if it isn't derived from data).
+
+### Databases
+
+Each market gets its own SQLite file (`data/<code>.sqlite` by default) opened
+lazily and cached per path. Sessions live in the same per-market file (cookie
+`listnear.sid`), so a login on one market never leaks to another.
+
+### UI text
 
 **UI text lives in locale files** under [`locales/`](locales): `en.json` is the
-base language dictionary and is merged with the market's locale overrides
-(`en-AU.json`, `en-US.json`). Views and routes only ever reference keys
-(`t('nav.postAd')`) — there is no hard-coded English in the templates, so a
-market can be re-worded without touching code. Categories stay family-safe in
-every market: the category set contains **no personals / dating / adult**
-options.
+base language dictionary, merged with the market's language file
+(`<language>.json`) and locale overrides (`en-AU.json`, `en-US.json`). Views and
+routes only ever reference keys (`t('nav.postAd')`) — there is no hard-coded
+English in the templates, so a market can be re-worded without touching code.
+Categories stay family-safe in every market: the category set contains **no
+personals / dating / adult** options.
 
 ---
 
@@ -173,20 +210,19 @@ The app boots with safe defaults and **zero config** for local development.
 
 | Variable | Purpose | Default |
 | -------- | ------- | ------- |
-| `SITE` | Which market to run (a file in `src/config/sites/<key>.json`). | `au` |
-| `SITE_CONFIG` | Path to a custom market JSON file (overrides `SITE`). | unset |
-| `SITE_NAME` | Product name shown across the UI. | market file |
-| `SITE_TAGLINE` | Short tagline for the home page. | market file |
+| `SITE` / `SITE_KEY` | Default market for non-matching hosts (local dev / CLI). | `us` |
+| `SITE_CONFIG` | Path to a JSON overlay merged into the **default** market only. | unset |
+| `ROOT_DOMAIN` | Apex domain used for host resolution and country subdomains. | `listnear.app` |
+| `SITE_NAME` | Product name shown across the UI. | catalogue |
+| `SITE_TAGLINE` | Short tagline for the home page. | catalogue |
 | `SITE_URL` | Public base URL (canonicals, magic links, sitemap). | `http://localhost:3000` |
-| `SITE_COUNTRY` | Two-letter country slug used in URLs (`/au/...`). | market file |
-| `SITE_COUNTRY_NAME` | Country display name (meta/policy text). | market file |
-| `SITE_CURRENCY` | Default currency for new ads (ISO 4217). | market file |
-| `SITE_LOCALE` | Locale for date/price formatting and locale-file overrides. | market file |
+| `SITE_CURRENCY` | Default currency for new ads (ISO 4217). | catalogue |
+| `SITE_LOCALE` | Locale for date/price formatting and locale-file overrides. | catalogue |
 | `SITE_LANGUAGE` | Base language dictionary (`locales/<lang>.json`). | `en` |
-| `SITE_DATE_FORMAT` | Date pattern, e.g. `D MMM YYYY` or `MMM D, YYYY`. | market file |
-| `SITE_UNITS` | `metric` (km) or `imperial` (mi). | market file |
-| `SITE_CONTACT_EMAIL` | Address shown on the `/contact` page. | market file |
-| `DB_PATH` | Per-market SQLite file. | market file |
+| `SITE_DATE_FORMAT` | Date pattern, e.g. `D MMM YYYY` or `MMM D, YYYY`. | catalogue |
+| `SITE_UNITS` | `metric` (km) or `imperial` (mi). | catalogue |
+| `SITE_CONTACT_EMAIL` | Address shown on the `/contact` page. | catalogue |
+| `DB_PATH` | SQLite file for the default market. | `data/<code>.sqlite` |
 | `HOST` | Bind address. Defaults to loopback; set `0.0.0.0` behind a reverse proxy/container. | `127.0.0.1` |
 | `PORT` | HTTP port. | `3000` |
 | `NODE_ENV` | `development` or `production`. | `development` |
@@ -212,16 +248,18 @@ The app boots with safe defaults and **zero config** for local development.
 ```
 listnear/
 ├─ src/
-│  ├─ config/            # Env config, i18n, categories, locations, sites/<key>.json markets
-│  ├─ db/                # Connection, schema.sql, ads repository, seed + reset scripts
-│  ├─ middleware/        # Locals, rate limits, Turnstile, admin auth, uploads
+│  ├─ config/            # Env config, countries catalogue, market resolution, i18n, categories, locations
+│  │                     #   countries.js (catalogue) · regions.js (city seeds) · market.js · context.js
+│  ├─ db/                # Per-market connections, schema.sql, ads repository, seed + reset scripts
+│  ├─ middleware/        # Market detection + gate, locals, rate limits, Turnstile, admin auth, uploads
 │  ├─ routes/            # pages, post, ads, manage, admin, seo, listings
 │  ├─ services/          # mailer, images (sharp -> WebP), moderation
 │  ├─ utils/             # helpers, url builders, JSON-LD builders
 │  └─ server.js          # App entrypoint: security, sessions, routes, maintenance
-├─ locales/              # UI text: en.json (base) + en-AU.json / en-US.json (market overrides)
+├─ locales/              # UI text: en.json (base) + <language>.json / en-AU.json, en-US.json overrides
 ├─ views/                # EJS templates (partials + pages, incl. admin)
 ├─ public/               # CSS, vanilla JS, icons, manifest, service worker, uploads
+├─ SOURCES.md            # Provenance & licences for country/region/city data
 ├─ .env.example
 └─ package.json
 ```
@@ -289,19 +327,40 @@ Railway, Fly.io, or a small VPS):
 > For a single-container/small-VPS setup, mount a volume for `data/` and
 > `public/uploads/` so the database and images survive restarts.
 
-### Running several markets
+### Running several markets (one process)
 
-To serve multiple markets (e.g. an AU and a US site), deploy **one instance per
-market** and give each its own branding, domain, database and storage:
+A single instance serves **all** markets — no per-market process is needed. The
+request `Host` header selects the market, so the only requirement is that the
+reverse proxy forwards the original `Host` (do not rewrite it to the upstream).
 
-| Instance | `SITE` | `SITE_URL` | `DB_PATH` |
-| -------- | ------ | ---------- | --------- |
-| US site  | `us`   | `https://listnear.app`    | `data/us.sqlite` |
-| AU site  | `au`   | `https://au.listnear.app` | `data/au.sqlite` |
+```bash
+# Production: ONE process, ONE port. No SITE= needed — hosts are detected.
+NODE_ENV=production HOST=127.0.0.1 PORT=3000 SITE_URL=https://listnear.app npm start
+```
 
-Each instance needs its own `data/` and `public/uploads/` volume. Custom markets
-can be added by dropping a JSON file in `src/config/sites/` (or pointing
-`SITE_CONFIG` at one) — the code itself never changes.
+Then point every hostname at that port and let the app route by `Host`:
+
+| Host | Market | Database |
+| ---- | ------ | -------- |
+| `listnear.app` (US) | `us` | `data/us.sqlite` |
+| `au.listnear.app` | `au` | `data/au.sqlite` |
+| `gb.listnear.app` | `gb` | `data/gb.sqlite` |
+| … | … | `data/<code>.sqlite` |
+
+Each market's SQLite file is created on first request. Mount `data/` (and
+`public/uploads/`) on persistent storage. The server admin's deploy script is at
+`/root/ops/classifieds/deploy.sh` (git pull → `patch-source.py` → `npm ci
+--omit=dev` → restart systemd); nothing here requires SSH access.
+
+- **TLS & wildcard cert:** issue a certificate covering `listnear.app` **and
+  `*.listnear.app`** so every country subdomain is served over HTTPS.
+- **`HOST`:** keep `127.0.0.1` behind the proxy (set `0.0.0.0` only in a
+  container without a loopback proxy).
+- **`ROOT_DOMAIN`:** only set this if the apex domain changes.
+- **Enabling a country:** the market exists as soon as the proxy resolves its
+  hostname; if it has no region data yet it shows "coming soon" instead. Add its
+  regions to `src/config/regions.js` to go live — no code changes, no new
+  process.
 
 ---
 

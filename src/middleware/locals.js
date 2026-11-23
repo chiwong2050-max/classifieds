@@ -3,7 +3,7 @@
 const config = require('../config');
 const { t, tp } = require('../config/i18n');
 const { CATEGORIES } = require('../config/categories');
-const { LOCATIONS, slugify } = require('../config/locations');
+const { locations, LOCATIONS, slugify } = require('../config/locations');
 const { appsForMarket } = require('../config/apps');
 const helpers = require('../utils/helpers');
 const urls = require('../utils/urls');
@@ -29,6 +29,13 @@ function localsMiddleware(req, res, next) {
   res.locals.imageThumbUrl = urls.imageThumbUrl;
   res.locals.currentPath = req.path;
   res.locals.query = req.query || {};
+  // Path used for hreflang alternates. Generic pages (/, /about/, /browse/,
+  // /post/) exist on every market, so the same path is the true equivalent.
+  // Location pages start with a country segment (`/au/vic/...`) that does not
+  // exist on another market, so those fall back to that market's homepage.
+  const pathOnly = req.path || '/';
+  const isLocationPath = /^\/[a-z]{2}(\/|$)/.test(pathOnly);
+  res.locals.alternatePath = isLocationPath ? '/' : req.originalUrl || '/';
   res.locals.isAdmin = Boolean(req.session && req.session.isAdmin);
   res.locals.maxImages = config.uploads.maxImages;
   res.locals.expiryDays = config.ad.expiryDays;

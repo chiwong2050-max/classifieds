@@ -8,11 +8,14 @@ const cookieParser = require('cookie-parser');
 const session = require('express-session');
 
 const config = require('./config');
+const context = require('./config/context');
 const { t } = require('./config/i18n');
 const { localsMiddleware } = require('./middleware/locals');
+const { marketMiddleware, marketGate } = require('./middleware/market');
 const { browseLimiter } = require('./middleware/rateLimit');
 const { ensureUploadDir } = require('./services/images');
 const { expireDueAds, pruneExpiredTokens } = require('./db/ads');
+const db = require('./db');
 const SqliteSessionStore = require('./db/sessionStore');
 
 const app = express();
@@ -54,6 +57,11 @@ app.use(compression());
 // --- Parsers ---------------------------------------------------------------
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser(config.session.secret));
+
+// --- Market resolution -----------------------------------------------------
+// Resolve the market from the Host header *before* the session middleware, so
+// session rows are read from / written to the correct market database.
+app.use(marketMiddleware);
 
 app.use(
   session({
@@ -97,6 +105,9 @@ app.get('/favicon.ico', (req, res) => res.redirect(301, '/favicon.svg'));
 
 // --- App locals + rate limit ----------------------------------------------
 app.use(localsMiddleware);
+// Registered-but-disabled markets show "coming soon"; reserved/unknown 404.
+// Placed after static assets so those pages still load their CSS/JS.
+app.use(marketGate);
 app.use(browseLimiter);
 
 // --- Routes ----------------------------------------------------------------
@@ -134,15 +145,21 @@ app.use((err, req, res, next) => {
 });
 
 // --- Background maintenance ------------------------------------------------
+// Runs per market: iterate every database opened so far and expire/prune
+// inside that market's context so the DB proxy targets the right file.
 function runMaintenance() {
-  try {
-    const expired = expireDueAds();
-    if (expired) console.log(`[maintenance] expired ${expired} ad(s)`);
-    pruneExpiredTokens();
-    const stale = SqliteSessionStore.pruneExpired();
-    if (stale) console.log(`[maintenance] pruned ${stale} stale session(s)`);
-  } catch (err) {
-    console.warn('[maintenance] failed:', err.message);
+  for (const site of db.openSites()) {
+    context.run({ site }, () => {
+      try {
+        const expired = expireDueAds();
+        if (expired) console.log(`[maintenance] ${site.key}: expired ${expired} ad(s)`);
+        pruneExpiredTokens();
+        const stale = SqliteSessionStore.pruneExpired();
+        if (stale) console.log(`[maintenance] ${site.key}: pruned ${stale} stale session(s)`);
+      } catch (err) {
+        console.warn(`[maintenance] ${site.key} failed:`, err.message);
+      }
+    });
   }
 }
 runMaintenance();
@@ -150,9 +167,9 @@ setInterval(runMaintenance, 1000 * 60 * 60); // hourly
 
 if (require.main === module) {
   app.listen(config.port, config.host, () => {
-    console.log(`\n  ${config.site.name} (${config.site.key}) listening on http://${config.host}:${config.port}`);
-    console.log(`  Public URL: ${config.site.url}`);
-    console.log(`  Environment: ${config.env}\n`);
+    console.log(`\n  ListNear multi-market server listening on http://${config.host}:${config.port}`);
+    console.log(`  Default market (non-matching hosts): ${config.defaultSite.name} (${config.defaultSite.key}) - ${config.defaultSite.url}`);
+    console.log(`  Markets resolved from Host header. Environment: ${config.env}\n`);
   });
 }
 

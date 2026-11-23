@@ -5,13 +5,15 @@
  *
  * All user-facing text lives in `locales/<locale>.json` so the same codebase
  * can serve different markets (AU, US, custom) with different wording. Two
- * files are merged at start-up:
+ * files are merged per market:
  *   1. the base language dictionary (e.g. `en.json`), and
  *   2. the market locale overrides (e.g. `en-AU.json`), which win.
  *
- * Look-ups use dotted paths (`t('nav.postAd')`) and support `{placeholder}`
- * interpolation. `tp()` adds simple one/other pluralisation via `<key>.one`
- * and `<key>.other` sub-keys.
+ * Because one process serves every market, the dictionary is resolved lazily
+ * from the active request's `config.site` (language + locale) and memoised per
+ * pair. Look-ups use dotted paths (`t('nav.postAd')`) and support
+ * `{placeholder}` interpolation. `tp()` adds simple one/other pluralisation via
+ * `<key>.one` / `<key>.other` sub-keys.
  *
  * Missing keys fall back to the key itself (so a missing translation is
  * visible in the UI and easy to spot) rather than throwing.
@@ -22,15 +24,16 @@ const path = require('path');
 const config = require('./index');
 
 const LOCALES_DIR = path.resolve(config.root, 'locales');
-const cache = new Map();
+const fileCache = new Map();
+const dictCache = new Map();
 
 /** Read (and memoise) a locale JSON file; returns {} when absent. */
 function readLocale(name) {
   if (!name) return {};
-  if (cache.has(name)) return cache.get(name);
+  if (fileCache.has(name)) return fileCache.get(name);
   const file = path.join(LOCALES_DIR, `${name}.json`);
   const data = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-  cache.set(name, data);
+  fileCache.set(name, data);
   return data;
 }
 
@@ -48,10 +51,27 @@ function merge(base, override) {
   return out;
 }
 
-// Base language + market-specific overrides.
-const dictionary = merge(readLocale(config.site.language), readLocale(config.site.locale));
+/**
+ * Build (and memoise) the merged dictionary for a market. Resolution order:
+ *   English base (`en`)  ->  the market's UI language  ->  the market locale.
+ * Each later layer wins, so an `en`/`en-AU` market reads naturally and a
+ * market whose language has no locale file yet safely falls back to English
+ * (the documented default) instead of showing raw keys.
+ */
+function dictionaryFor(site) {
+  const s = site || config.site;
+  const language = s.language || 'en';
+  const locale = s.locale || language;
+  const key = `${language}|${locale}`;
+  if (!dictCache.has(key)) {
+    const merged = merge(merge(readLocale('en'), readLocale(language)), readLocale(locale));
+    dictCache.set(key, merged);
+  }
+  return dictCache.get(key);
+}
 
 function lookup(key) {
+  const dictionary = dictionaryFor(config.site);
   return String(key)
     .split('.')
     .reduce((acc, part) => (acc && typeof acc === 'object' && acc[part] !== undefined ? acc[part] : undefined), dictionary);
@@ -76,4 +96,16 @@ function tp(key, count, vars = {}) {
   return t(`${key}.${suffix}`, { ...vars, count });
 }
 
-module.exports = { t, tp, dictionary, locale: config.site.locale };
+module.exports = {
+  t,
+  tp,
+  dictionaryFor,
+  // Live views of the active market's dictionary/locale (getters, not snapshots,
+  // so they follow host-based market resolution within a single process).
+  get dictionary() {
+    return dictionaryFor(config.site);
+  },
+  get locale() {
+    return config.site.locale;
+  },
+};

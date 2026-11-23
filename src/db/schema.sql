@@ -95,6 +95,16 @@ CREATE TABLE IF NOT EXISTS contact_messages (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Persistent sessions (one row per logged-in browser). Kept in each market's
+-- own database so every market created by a connection has its own session
+-- table - see src/db/sessionStore.js.
+CREATE TABLE IF NOT EXISTS sessions (
+  sid    TEXT PRIMARY KEY,
+  sess   TEXT    NOT NULL,
+  expire INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expire);
+
 -- Garbage-collect expired tokens occasionally (handled in app code too).
 -- ---------------------------------------------------------------------------
 -- Full-text search (FTS5) over the ads table.
