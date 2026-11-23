@@ -82,23 +82,39 @@ app.use(
 
 // --- Static assets ---------------------------------------------------------
 ensureUploadDir();
-app.use(
-  express.static(path.join(config.root, 'public'), {
-    maxAge: config.isProduction ? '7d' : 0,
-    setHeaders(res, filePath) {
-      const base = path.basename(filePath);
-      // PWA entry points must always revalidate so new builds ship at once.
-      if (base === 'sw.js' || base === 'manifest.webmanifest') {
-        res.setHeader('Cache-Control', 'no-cache');
-        return;
-      }
-      // User uploads are immutable-ish; cache them a little longer.
-      if (filePath.includes(`${path.sep}uploads${path.sep}`)) {
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-      }
-    },
-  })
-);
+
+// User uploads live in a per-market directory (<base>/<cc>). Serve ONLY the
+// current market's files at /uploads, so one country can never read another's
+// images. A static handler is cached per directory to avoid rebuilding it on
+// every request.
+const uploadStaticCache = new Map();
+function serveUploads(req, res, next) {
+  const dir = config.uploads.dir;
+  let handler = uploadStaticCache.get(dir);
+  if (!handler) {
+    handler = express.static(dir, { maxAge: config.isProduction ? '1d' : 0 });
+    uploadStaticCache.set(dir, handler);
+  }
+  return handler(req, res, next);
+}
+app.use('/uploads', serveUploads);
+
+// Everything else comes from the shared public bundle. The guard stops the
+// generic handler from ever reaching upload files (handled above).
+const publicStatic = express.static(path.join(config.root, 'public'), {
+  maxAge: config.isProduction ? '7d' : 0,
+  setHeaders(res, filePath) {
+    const base = path.basename(filePath);
+    // PWA entry points must always revalidate so new builds ship at once.
+    if (base === 'sw.js' || base === 'manifest.webmanifest') {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+});
+app.use((req, res, next) => {
+  if (/^\/uploads(\/|$)/.test(req.path)) return next();
+  return publicStatic(req, res, next);
+});
 
 // Browsers and crawlers still ask for /favicon.ico; point them at our SVG mark.
 app.get('/favicon.ico', (req, res) => res.redirect(301, '/favicon.svg'));

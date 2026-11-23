@@ -15,22 +15,32 @@
 
     <nav class="header-nav" aria-label="<%= t('nav.main') %>">
       <% if (site.alternates && site.alternates.length > 1) { %>
+        <%# Country picker. Links keep the current path on the other host for
+            global pages and fall back to that market's home page for
+            location-scoped URLs (see alternatePath). %>
         <details class="market-picker">
           <summary>
             <span class="hidden"><%= t('nav.changeMarket') %></span>
             <span class="market-picker-label"><%= site.countryName %></span>
           </summary>
-          <ul class="market-menu">
-            <% site.alternates.forEach(function (alt) { %>
-              <li>
-                <% if (alt.key === site.key) { %>
-                  <span class="market-current" aria-current="true"><%= alt.label %></span>
-                <% } else { %>
-                  <a href="<%= alt.url %>" hreflang="<%= alt.hreflang %>"><%= alt.label %></a>
-                <% } %>
-              </li>
-            <% }); %>
-          </ul>
+          <div class="market-menu-wrap">
+            <% if (site.alternates.length > 10) { %>
+              <label class="hidden" for="market-filter"><%= t('nav.filterCountries') %></label>
+              <input id="market-filter" class="market-filter" type="search" data-market-filter
+                     placeholder="<%= t('nav.filterCountries') %>" autocomplete="off">
+            <% } %>
+            <ul class="market-menu" data-market-menu>
+              <% site.alternates.forEach(function (alt) { %>
+                <li data-market-name="<%= String(alt.label).toLowerCase() %>">
+                  <% if (alt.key === site.key) { %>
+                    <span class="market-current" aria-current="true"><%= alt.label %></span>
+                  <% } else { %>
+                    <a href="<%= alt.url %><%= alternatePath || '/' %>" hreflang="<%= alt.hreflang %>"><%= alt.label %></a>
+                  <% } %>
+                </li>
+              <% }); %>
+            </ul>
+          </div>
         </details>
       <% } %>
       <a class="navlink" href="/browse/"><%= t('nav.browse') %></a>

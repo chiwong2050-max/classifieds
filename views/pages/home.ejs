@@ -71,7 +71,7 @@
       </div>
     <% } else { %>
       <div class="card card-pad center">
-        <h3><%= t('home.noListings') %></h3>
+        <h3><%= t('home.noListings', { countryName: site.countryName }) %></h3>
         <p class="muted"><%= t('home.beFirst') %></p>
         <a class="btn btn-primary" href="/post/"><%= t('home.postFreeAdBtn') %></a>
       </div>

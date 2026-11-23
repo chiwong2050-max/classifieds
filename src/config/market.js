@@ -12,8 +12,10 @@
  *   - reserved labels (www, api, cdn, ...)       -> never a country
  *
  * Anything not on the root domain (localhost, 127.0.0.1, an override) falls
- * back to the local-dev market chosen by `SITE` / `SITE_KEY` (default `us`).
+ * back to the local-dev market chosen by `SITE` / `SITE_KEY` (default `au`).
  */
+
+const path = require('path');
 
 const {
   ROOT_DOMAIN,
@@ -23,7 +25,19 @@ const {
   enabledCountries,
 } = require('./countries');
 
-const DEFAULT_CODE = String(process.env.SITE || process.env.SITE_KEY || 'us').toLowerCase();
+const DEFAULT_CODE = String(process.env.SITE || process.env.SITE_KEY || 'au').toLowerCase();
+
+// Where every market's SQLite file lives. With DB_DIR set, each country gets
+// its own file at `<DB_DIR>/<cc>.sqlite` (an absolute path is used as-is);
+// otherwise the repo-relative default `data/<cc>.sqlite` applies. `DB_PATH`
+// remains a single-market override for the default market only.
+const DB_DIR = process.env.DB_DIR ? path.resolve(process.env.DB_DIR) : '';
+
+/** Resolve a country's database path (one SQLite file per country). */
+function dbFor(code) {
+  const file = `${code}.sqlite`;
+  return DB_DIR ? path.join(DB_DIR, file) : `data/${file}`;
+}
 
 const pick = (...values) => {
   for (const value of values) {
@@ -49,7 +63,7 @@ function siteFor(code, { applyEnv = false } = {}) {
     dateFormat: c.code === 'us' ? 'MMM D, YYYY' : 'D MMM YYYY',
     units: c.units,
     url: c.url,
-    database: `data/${c.code}.sqlite`,
+    database: dbFor(c.code),
     supportUrl: c.supportUrl,
     contactEmail: c.contactEmail,
     emergencyNumber: c.emergencyNumber,

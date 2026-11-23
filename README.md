@@ -139,19 +139,29 @@ recorded in [SOURCES.md](SOURCES.md).
 
 ### Enabled vs coming-soon
 
-Every country is **catalogued**, but a market is only served when it has a real
-region/city list. Countries without one stay `enabled: false` and render a
-"coming soon" page (HTTP 200, `noindex,follow`) that links to the live markets —
-never mock listings. The US (all 50 states + DC) and Australia are enabled, plus
-a curated set of high-traffic markets; the rest enable as data is added. To
-enable a country, add its regions to `regions.js` (and flip `enabled` in the
-catalogue if it isn't derived from data).
+Every country is **catalogued** (so DNS/SSL can be prepared), but a market is
+only served when its host is **live**. Two switches decide that:
 
-### Databases
+1. the `enabled` flag on the catalogue entry (defaults to the repo's
+   `DEFAULT_ENABLED_CODES`, currently `us` + `au`), and
+2. an optional env **allow-list**: set `LISTNEAR_ENABLED_COUNTRIES=us,au,gb` to
+   turn batches on without a code edit — when set, it *is* the allow-list.
 
-Each market gets its own SQLite file (`data/<code>.sqlite` by default) opened
-lazily and cached per path. Sessions live in the same per-market file (cookie
-`listnear.sid`), so a login on one market never leaks to another.
+A country must also have a real region/city list in
+[`regions.js`](src/config/regions.js) to go live. Everything else answers on its
+Host with a "coming soon" page (HTTP 200, `noindex,follow`) that links to the
+live markets — never mock listings or another country's ads. **US and AU ship
+live**; the rest enable as data is added.
+
+### Databases & uploads
+
+**One SQLite file per country** (`data/<cc>.sqlite` by default, or
+`<DB_DIR>/<cc>.sqlite` when `DB_DIR` is set), opened lazily on first request and
+cached per path — the whole country set is never opened at start-up. Sessions
+live in the same per-market file (cookie `listnear.sid`, host-only), so a login
+on one market never leaks to another. Uploads are likewise per country
+(`<UPLOAD_DIR>/<cc>`), and only the **current** market's directory is served at
+`/uploads`.
 
 ### UI text
 
@@ -215,7 +225,7 @@ The app boots with safe defaults and **zero config** for local development.
 | `ROOT_DOMAIN` | Apex domain used for host resolution and country subdomains. | `listnear.app` |
 | `SITE_NAME` | Product name shown across the UI. | catalogue |
 | `SITE_TAGLINE` | Short tagline for the home page. | catalogue |
-| `SITE_URL` | Public base URL (canonicals, magic links, sitemap). | `http://localhost:3000` |
+| `SITE_URL` | Public base URL of the **default** market (canonicals, magic links, sitemap). Other markets use their own origin. | market origin |
 | `SITE_CURRENCY` | Default currency for new ads (ISO 4217). | catalogue |
 | `SITE_LOCALE` | Locale for date/price formatting and locale-file overrides. | catalogue |
 | `SITE_LANGUAGE` | Base language dictionary (`locales/<lang>.json`). | `en` |
@@ -237,6 +247,7 @@ The app boots with safe defaults and **zero config** for local development.
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile keys. Leave blank to disable. | blank |
 | `EMERGENCY_NUMBER` | Emergency number shown on the safety page. | market file |
 | `SUPPORT_URL` | Footer support link. | market file |
+| `ADS_ENABLED` | Ad-network switch. Off by default — **no ads are served**. | `false` |
 
 > **Secrets:** `.env` is git-ignored. Never commit real secrets. Only
 > `.env.example` (placeholders) is tracked.
@@ -280,7 +291,7 @@ listnear/
 | GET | `/manage/:token` · POST `/manage/:token/renew` | Manage / renew an ad. |
 | GET | `/admin` (+ `/admin/login`, `/admin/ads/:id`, approve/reject, reports) | Moderation. |
 | GET | `/api/locations` | Location data for the post-form cascade. |
-| GET | `/robots.txt` · `/sitemap.xml` | SEO endpoints (per-market, from `SITE_URL`). |
+| GET | `/robots.txt` · `/sitemap.xml` | SEO endpoints — per-market, from the request's own origin. |
 | GET | `/about/` · `/contact/` · `/privacy/` · `/terms/` · `/safety/` | Informational / policy pages. |
 
 ---
@@ -318,14 +329,15 @@ listnear/
 This is a standard Node/Express app. On a host that supports Node (e.g. Vercel,
 Railway, Fly.io, or a small VPS):
 
-1. Set the environment variables from `.env.example` (use real `SITE_URL`,
+1. Set the environment variables from `.env.example` (use real
    `SESSION_SECRET`, `ADMIN_PASSWORD`, and SMTP/Turnstile keys as needed).
-2. Use **persistent** storage for the SQLite file (`data/`) and `public/uploads/`
-   — ephemeral filesystems will lose data between deploys.
+2. Use **persistent** storage for the databases and uploads (`data/` and
+   `public/uploads/` by default, or `DB_DIR` / `UPLOAD_DIR`) — ephemeral
+   filesystems will lose data between deploys.
 3. Run `npm install && npm start`.
 
-> For a single-container/small-VPS setup, mount a volume for `data/` and
-> `public/uploads/` so the database and images survive restarts.
+> For a single-container/small-VPS setup, mount a volume for the data directory
+> and uploads so the databases and images survive restarts.
 
 ### Running several markets (one process)
 
@@ -334,33 +346,48 @@ request `Host` header selects the market, so the only requirement is that the
 reverse proxy forwards the original `Host` (do not rewrite it to the upstream).
 
 ```bash
-# Production: ONE process, ONE port. No SITE= needed — hosts are detected.
-NODE_ENV=production HOST=127.0.0.1 PORT=3000 SITE_URL=https://listnear.app npm start
+# Production: ONE process, ONE loopback port. No SITE= needed — hosts are detected.
+NODE_ENV=production HOST=127.0.0.1 PORT=3000 npm start
 ```
 
 Then point every hostname at that port and let the app route by `Host`:
 
 | Host | Market | Database |
 | ---- | ------ | -------- |
-| `listnear.app` (US) | `us` | `data/us.sqlite` |
+| `listnear.app` / `www.listnear.app` | `us` (apex; `www` 301s) | `data/us.sqlite` |
 | `au.listnear.app` | `au` | `data/au.sqlite` |
 | `gb.listnear.app` | `gb` | `data/gb.sqlite` |
-| … | … | `data/<code>.sqlite` |
+| … | … | `data/<cc>.sqlite` |
 
-Each market's SQLite file is created on first request. Mount `data/` (and
-`public/uploads/`) on persistent storage. The server admin's deploy script is at
-`/root/ops/classifieds/deploy.sh` (git pull → `patch-source.py` → `npm ci
---omit=dev` → restart systemd); nothing here requires SSH access.
+Each market's SQLite file is created on first request. The server admin's deploy
+script is at `/root/ops/classifieds/deploy.sh` (git pull → `patch-source.py` →
+`npm ci --omit=dev` → restart systemd); nothing here requires SSH access.
 
-- **TLS & wildcard cert:** issue a certificate covering `listnear.app` **and
-  `*.listnear.app`** so every country subdomain is served over HTTPS.
-- **`HOST`:** keep `127.0.0.1` behind the proxy (set `0.0.0.0` only in a
-  container without a loopback proxy).
+#### Production notes (server admin)
+
+- **DNS:** one wildcard record — `*.listnear.app` — plus the apex,
+  `listnear.app`, and `www.listnear.app`. Every country subdomain resolves to
+  the same host; the app routes by `Host`.
+- **TLS:** a wildcard certificate covering `listnear.app` **and
+  `*.listnear.app`**, so every country subdomain is served over HTTPS.
+- **Reverse proxy:** one `server_name listnear.app www.listnear.app
+  *.listnear.app;` block that forwards the original `Host` header (do **not**
+  rewrite it) to the single Node process on `127.0.0.1`.
+- **One process:** the Node app runs once and is the only thing listening;
+  `HOST=127.0.0.1` behind the proxy.
+- **Per-country data:** keep separate databases and uploads per country. Set
+  `DB_DIR` and `UPLOAD_DIR` to persistent, backed-up locations (each country is
+  `<DB_DIR>/<cc>.sqlite` and `<UPLOAD_DIR>/<cc>`) so one corrupt or locked file
+  stays contained and backups/rollbacks can be per country.
+- **Google Search Console:** verify a **Domain property** for `listnear.app` so
+  every subdomain is covered, and submit the apex sitemap.
 - **`ROOT_DOMAIN`:** only set this if the apex domain changes.
-- **Enabling a country:** the market exists as soon as the proxy resolves its
-  hostname; if it has no region data yet it shows "coming soon" instead. Add its
-  regions to `src/config/regions.js` to go live — no code changes, no new
+- **Enabling a country:** once its host resolves and a certificate exists, set
+  `LISTNEAR_ENABLED_COUNTRIES` (or the catalogue flag) and make sure it has
+  region/city data. Until then it shows "coming soon" — no code changes, no new
   process.
+- **No ads:** no AdSense (or any ad) script is loaded; `ADS_ENABLED` is off and
+  no ad slots are rendered.
 
 ---
 

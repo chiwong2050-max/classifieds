@@ -177,6 +177,7 @@
     initImageCount();
     initAttrGroups();
     initLocationCascade();
+    initMarketFilter();
     initServiceWorker();
   });
 })();

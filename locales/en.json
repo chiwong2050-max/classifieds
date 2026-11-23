@@ -116,7 +116,7 @@
     "noResultsBody": "Nothing matches your filters here yet. Try widening your search, or post the first ad.",
     "clearFilters": "Clear filters",
     "postAnAd": "Post an ad",
-    "emptyTitle": "Be the first to post here - it's free",
+    "emptyTitle": "Be the first to post in {countryName} - it's free",
     "emptyCta": "Post a free ad",
     "emptyIdeasTitle": "Not sure what to post? Try something like:",
     "ideas": {

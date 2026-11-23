@@ -69,7 +69,7 @@
     <%# Empty state: no fake listings, just an invitation plus plain-text ideas. %>
     <% var ideaSet = ['for-sale', 'jobs', 'services', 'property-rentals', 'vehicles', 'community', 'wanted', 'pets'].indexOf(loc.category) !== -1 ? loc.category : 'default'; %>
     <div class="card card-pad center empty-state">
-      <h3 class="empty-title"><%= t('listing.emptyTitle') %></h3>
+      <h3 class="empty-title"><%= t('listing.emptyTitle', { countryName: loc.countryName }) %></h3>
       <p class="muted"><%= t('listing.noResultsBody') %></p>
       <p class="mt-4"><a class="btn btn-primary btn-lg" href="/post/?country=<%= loc.country %>&state=<%= loc.state || '' %>&city=<%= loc.city || '' %>&category=<%= loc.category || '' %>"><%= t('listing.emptyCta') %></a></p>
       <p class="small muted mt-6 mb-2"><%= t('listing.emptyIdeasTitle') %></p>

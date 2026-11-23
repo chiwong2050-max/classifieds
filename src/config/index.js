@@ -42,6 +42,11 @@ const int = (value, fallback) => {
 
 const ROOT = path.resolve(__dirname, '../..');
 
+// Base directory for user uploads. Each market stores its files in a
+// per-country subdirectory (see `uploads.dir`) so one country can never read
+// another's images.
+const UPLOAD_BASE = path.resolve(ROOT, process.env.UPLOAD_DIR || 'public/uploads');
+
 // --- Default (fallback) market ---------------------------------------------
 const defaultSite = siteFor(DEFAULT_CODE, { applyEnv: true });
 
@@ -114,9 +119,15 @@ const config = {
   },
 
   uploads: {
-    // Absolute path to the upload directory.
-    dir: path.resolve(ROOT, process.env.UPLOAD_DIR || 'public/uploads'),
-    // Public URL prefix used when rendering <img src>.
+    // Shared base directory (absolute).
+    base: UPLOAD_BASE,
+    // Per-market upload directory: `<base>/<cc>`. A live getter so it follows
+    // the active market, exactly like `config.site`.
+    get dir() {
+      return path.join(UPLOAD_BASE, config.site.key);
+    },
+    // Public URL prefix used when rendering <img src>. The `/uploads` handler
+    // maps this to the current market's directory only.
     publicPath: '/uploads',
     maxImages: int(process.env.MAX_IMAGES_PER_AD, 6),
     maxFileSizeBytes: 8 * 1024 * 1024, // 8MB per uploaded file
@@ -126,6 +137,12 @@ const config = {
 
   ad: {
     expiryDays: int(process.env.AD_EXPIRY_DAYS, 30),
+  },
+
+  // No ad network is integrated and no ad slots are ever rendered. This single
+  // boolean documents that stance and gives a future change one place to flip.
+  ads: {
+    enabled: bool(process.env.ADS_ENABLED, false),
   },
 
   turnstile: {

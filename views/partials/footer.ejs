@@ -36,7 +36,7 @@
                 <% if (alt.key === site.key) { %>
                   <span aria-current="true"><%= alt.label %></span>
                 <% } else { %>
-                  <a href="<%= alt.url %>" hreflang="<%= alt.hreflang %>"><%= alt.label %></a>
+                  <a href="<%= alt.url %><%= alternatePath || '/' %>" hreflang="<%= alt.hreflang %>"><%= alt.label %></a>
                 <% } %>
               </li>
             <% }); %>

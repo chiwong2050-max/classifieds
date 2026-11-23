@@ -41,20 +41,28 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-const CURRENCY_SYMBOLS = { AUD: '$', NZD: '$', USD: '$', GBP: '£', CAD: '$', EUR: '€' };
-
-function currencySymbol(currency) {
-  return CURRENCY_SYMBOLS[String(currency || '').toUpperCase()] || '';
-}
-
-/** Human-friendly price label, e.g. "$1,250" / "Free" / "Contact for price". */
+/**
+ * Human-friendly price label using the market's locale + currency, e.g.
+ * "$1,250" / "¥1,234" / "Free" / "Contact for price".
+ *
+ * `Intl.NumberFormat` handles each currency's own conventions (JPY/KRW have no
+ * decimals, KWD has three, and symbol/placement follow the locale), so no
+ * hand-maintained symbol table is needed.
+ */
 function formatPrice(cents, currency, priceType = 'fixed') {
   // Labels come from the market's locale file so each site reads naturally.
   if (priceType === 'free') return t('price.free');
   if (priceType === 'contact' || cents === null || cents === undefined) return t('price.contact');
-  // Use the market locale so thousands separators match local convention.
-  const value = (cents / 100).toLocaleString(config.site.locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  const label = `${currencySymbol(currency)}${value}`;
+  const locale = config.site.locale;
+  const code = String(currency || config.site.currency || 'USD').toUpperCase();
+  let label;
+  try {
+    label = new Intl.NumberFormat(locale, { style: 'currency', currency: code }).format(cents / 100);
+  } catch {
+    // Unknown/invalid ISO code -> keep the number, append the code verbatim.
+    const value = (cents / 100).toLocaleString(locale, { maximumFractionDigits: 2 });
+    label = `${value} ${code}`;
+  }
   return priceType === 'negotiable' ? t('price.negotiable', { price: label }) : label;
 }
 
@@ -104,7 +112,6 @@ module.exports = {
   hashIp,
   safeEqual,
   formatPrice,
-  currencySymbol,
   sqliteNow,
   sqliteNowPlusDays,
   timeAgo,

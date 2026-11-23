@@ -7,7 +7,8 @@
  * one market: the US runs on the apex domain and every other country on its
  * `<code>.listnear.app` subdomain (see `src/config/market.js`). Region/city
  * seed data lives in `src/config/regions.js`; a country is only served when it
- * has real region data (or an explicit `enabled: true`).
+ * is enabled *and* has real region data (a data-less market would have nothing
+ * to browse). See `DEFAULT_ENABLED_CODES` / `LISTNEAR_ENABLED_COUNTRIES` below.
  *
  * Territory exclusions follow Google's list: Crimea, Cuba, Iran, North Korea
  * and the so-called DNR/LNR are intentionally absent. Uninhabited territories
@@ -271,6 +272,27 @@ const RAW = [
 const DEFAULT_SUPPORT_URL = 'https://buymeacoffee.com/aussieloo?ref=listnear';
 const DEFAULT_CONTACT_EMAIL = 'support@listnear.app';
 
+/**
+ * Markets served by default (the flags shipped in the repo). Every other
+ * catalogue entry is config-only until the server admin turns it on via
+ * `LISTNEAR_ENABLED_COUNTRIES` — so DNS/SSL can be prepared country by country
+ * without a code change.
+ */
+const DEFAULT_ENABLED_CODES = ['us', 'au'];
+
+/** Parse a comma-separated allow-list (e.g. "us,au,gb") into lower-case codes. */
+function parseEnabledList(value) {
+  return String(value || '')
+    .split(',')
+    .map((code) => code.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// If LISTNEAR_ENABLED_COUNTRIES is set it becomes the allow-list; otherwise the
+// JSON default set applies. Either way the "live" decision is data-driven.
+const ENV_ENABLED_CODES = parseEnabledList(process.env.LISTNEAR_ENABLED_COUNTRIES);
+const ENABLED_CODES = new Set(ENV_ENABLED_CODES.length ? ENV_ENABLED_CODES : DEFAULT_ENABLED_CODES);
+
 /** Derive the canonical public origin for a country code. */
 function urlFor(code) {
   return code === 'us' ? `https://${ROOT_DOMAIN}` : `https://${code}.${ROOT_DOMAIN}`;
@@ -294,7 +316,8 @@ const COUNTRIES = RAW.map((row) => {
     emergencyNumber,
     contactEmail: DEFAULT_CONTACT_EMAIL,
     supportUrl: DEFAULT_SUPPORT_URL,
-    enabled: Boolean(REGIONS[code]),
+    // Enabled only when flagged *and* we have real region/city data to serve.
+    enabled: ENABLED_CODES.has(code) && Object.keys(regions).length > 0,
     regions,
   };
 });
@@ -316,6 +339,8 @@ module.exports = {
   RESERVED_SUBDOMAINS,
   HOST_ALIASES,
   COUNTRIES,
+  DEFAULT_ENABLED_CODES,
+  parseEnabledList,
   getCountry,
   enabledCountries,
 };
