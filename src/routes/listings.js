@@ -2,6 +2,7 @@
 
 const config = require('../config');
 const ads = require('../db/ads');
+const areas = require('../config/areas');
 const { CATEGORIES, getCategory, categoryName } = require('../config/categories');
 const { getCountry, getState, getCity, slugify } = require('../config/locations');
 const { listingUrl, absolute } = require('../utils/urls');
@@ -40,6 +41,16 @@ function resolveLocation(segments) {
       parts.city = city.slug;
       parts.cityName = city.name;
       i += 1;
+    } else if (!getCategory(segments[i])) {
+      // Not a seeded city. Accept it when the server team has dropped an area
+      // file for it, so any suburb or town gets an area page too.
+      const slug = String(segments[i]).toLowerCase();
+      const area = areas.loadArea(country, parts.state, slug);
+      if (area) {
+        parts.city = slug;
+        parts.cityName = area.name;
+        i += 1;
+      }
     }
   }
   if (i < segments.length && getCategory(segments[i])) {
@@ -140,6 +151,33 @@ function renderListing(req, res, { loc, baseUrl, isSearch = false }) {
     if (loc.category) crumbs.push({ name: catLabel, url: listingUrl(loc) });
   }
 
+  // Area hub: a plain city page (never a category or search page) that has
+  // real content dropped by the server team. Sections render only when the
+  // data exists (see the areaHub partial); nothing is ever placeholder text.
+  let areaHub = !isSearch && loc.city && !loc.category
+    ? areas.loadArea(loc.country, loc.state, loc.city)
+    : null;
+  if (areaHub) {
+    // Area pages sit behind a kill-switch. They are noindex unless indexing is
+    // enabled AND the page is rich (see config/areas.isRich); the sitemap omits
+    // them on the same terms.
+    robots = config.areaPages.indexing && areas.isRich(areaHub, total)
+      ? 'index,follow'
+      : 'noindex,follow';
+    // Link a nearby area only when it actually has a page (a seeded city or an
+    // area file), so we never render a link that 404s.
+    areaHub = {
+      ...areaHub,
+      nearby: areaHub.nearby.map((n) => ({
+        name: n.name,
+        km: n.km,
+        href: getCity(loc.country, loc.state, n.slug) || areas.loadArea(loc.country, loc.state, n.slug)
+          ? listingUrl({ country: loc.country, state: loc.state, city: n.slug })
+          : null,
+      })),
+    };
+  }
+
   // Sibling navigation.
   const categoryCounts = ads.categoryCounts({ country: loc.country, state: loc.state, city: loc.city });
   const countryObj = getCountry(loc.country);
@@ -155,6 +193,7 @@ function renderListing(req, res, { loc, baseUrl, isSearch = false }) {
     jsonLd: breadcrumbJsonLd(crumbs),
     loc,
     crumbs,
+    areaHub,
     rows,
     total,
     page,

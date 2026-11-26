@@ -1,0 +1,32 @@
+{
+  "name": "Ballarat",
+  "state": "vic",
+  "country": "au",
+  "lga": "City of Ballarat",
+  "wiki": {
+    "extract": "Ballarat is a city in the Central Highlands of Victoria, Australia. At the 2021 census, it had a population of 111,973, making it the third-largest urban inland city in Australia and the third-largest city in Victoria.",
+    "title": "Ballarat",
+    "url": "https://en.wikipedia.org/wiki/Ballarat",
+    "licence": "CC BY-SA 4.0"
+  },
+  "photo": {
+    "file": "Ballarat_Town_Hall_2011_004.JPG",
+    "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Ballarat_Town_Hall_2011_004.JPG",
+    "author": "Mattinbgn",
+    "licence": "CC BY 3.0",
+    "commonsUrl": "https://commons.wikimedia.org/wiki/File:Ballarat_Town_Hall_2011_004.JPG"
+  },
+  "population": {
+    "value": 111973,
+    "year": 2021,
+    "source": "Australian Bureau of Statistics, 2021 Census",
+    "sourceUrl": "https://www.abs.gov.au/census"
+  },
+  "nearby": [
+    { "name": "Creswick", "slug": "creswick", "km": null },
+    { "name": "Daylesford", "slug": "daylesford", "km": null },
+    { "name": "Ballan", "slug": "ballan", "km": null }
+  ],
+  "places": [],
+  "businesses": []
+}

@@ -42,7 +42,8 @@ app.use(
           'https://static.cloudflareinsights.com',
           'https://cloudflareinsights.com',
         ],
-        'img-src': ["'self'", 'data:'],
+        // Area pages show a photo from Wikimedia Commons, so allow that host.
+        'img-src': ["'self'", 'data:', 'https://upload.wikimedia.org', 'https://commons.wikimedia.org'],
         'style-src': ["'self'", "'unsafe-inline'"],
         // Keep https-only upgrades off for local dev over http.
         'upgrade-insecure-requests': config.isProduction ? [] : null,
@@ -179,7 +180,9 @@ function runMaintenance() {
   }
 }
 runMaintenance();
-setInterval(runMaintenance, 1000 * 60 * 60); // hourly
+// Not referenced, so tests can load the app without the timer holding the
+// process open; the running server keeps it alive in production.
+setInterval(runMaintenance, 1000 * 60 * 60).unref(); // hourly
 
 if (require.main === module) {
   app.listen(config.port, config.host, () => {

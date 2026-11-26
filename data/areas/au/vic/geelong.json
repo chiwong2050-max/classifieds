@@ -1,0 +1,32 @@
+{
+  "name": "Geelong",
+  "state": "vic",
+  "country": "au",
+  "lga": "City of Greater Geelong",
+  "wiki": {
+    "extract": "Geelong is a port city in Victoria, Australia, located at the western end of Corio Bay and the left bank of Barwon River, about 75 km (47 mi) southwest of Melbourne. With an estimated population of 282,809 in 2023, Geelong is the second-largest city in the state of Victoria.",
+    "title": "Geelong",
+    "url": "https://en.wikipedia.org/wiki/Geelong",
+    "licence": "CC BY-SA 4.0"
+  },
+  "photo": {
+    "file": "Geelong_Town_Hall_(cropped).JPG",
+    "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Geelong_Town_Hall_(cropped).JPG",
+    "author": "Mattinbgn",
+    "licence": "CC BY-SA 3.0",
+    "commonsUrl": "https://commons.wikimedia.org/wiki/File:Geelong_Town_Hall_(cropped).JPG"
+  },
+  "population": {
+    "value": 282809,
+    "year": 2023,
+    "source": "Australian Bureau of Statistics, Regional population",
+    "sourceUrl": "https://www.abs.gov.au/statistics/people/population/regional-population"
+  },
+  "nearby": [
+    { "name": "Torquay", "slug": "torquay", "km": null },
+    { "name": "Lara", "slug": "lara", "km": null },
+    { "name": "Ocean Grove", "slug": "ocean-grove", "km": null }
+  ],
+  "places": [],
+  "businesses": []
+}

@@ -1,0 +1,87 @@
+<%#
+  Area hub: a mini community page assembled only from real data (see
+  src/config/areas.js). Every block is guarded, so nothing renders unless the
+  data exists - there is no placeholder or invented content anywhere here.
+  Rendered above the existing classifieds on a city page.
+%>
+<%
+  var areaValue = function (n) {
+    try { return new Intl.NumberFormat(site.locale).format(n); } catch (e) { return String(n); }
+  };
+%>
+<header class="area-hero">
+  <h1 class="area-title"><%= area.name %></h1>
+  <% if (area.lga) { %><p class="muted area-meta"><%= area.lga %></p><% } %>
+
+  <% if (area.wiki) { %>
+    <p class="area-intro"><%= area.wiki.extract %></p>
+    <p class="small muted area-credit">
+      <a href="<%= area.wiki.url %>" rel="noopener" target="_blank"><%= t('area.wikiAttribution') %></a><% if (area.wiki.title) { %> &middot; <%= area.wiki.title %><% } %>
+      &middot; <%= t('area.wikiLicence') %>
+    </p>
+  <% } %>
+</header>
+
+<% if (area.photo) { %>
+  <figure class="area-photo">
+    <img src="<%= area.photo.url %>" alt="<%= t('area.photoAlt', { area: area.name }) %>"
+         width="1200" height="675" loading="lazy" decoding="async">
+    <figcaption class="small muted area-credit">
+      <% if (area.photo.author) { %><%= t('area.photoCredit', { author: area.photo.author }) %><% } %>
+      <% if (area.photo.licence) { %> &middot; <%= area.photo.licence %><% } %>
+      <% if (area.photo.commonsUrl) { %> &middot; <a href="<%= area.photo.commonsUrl %>" rel="noopener" target="_blank"><%= t('area.photoOnCommons') %></a><% } %>
+    </figcaption>
+  </figure>
+<% } %>
+
+<% if (area.population) { %>
+  <p class="area-pop">
+    <strong><%= area.population.year
+      ? t('area.populationYear', { value: areaValue(area.population.value), year: area.population.year })
+      : t('area.population', { value: areaValue(area.population.value) }) %></strong>
+    <% if (area.population.source && area.population.sourceUrl) { %>
+      <span class="small muted"> - <a href="<%= area.population.sourceUrl %>" rel="noopener" target="_blank"><%= area.population.source %></a></span>
+    <% } else if (area.population.source) { %>
+      <span class="small muted"> - <%= area.population.source %></span>
+    <% } %>
+  </p>
+<% } %>
+
+<% if (area.nearby.length) { %>
+  <section class="section area-block">
+    <h2 class="small muted"><%= t('area.nearby') %></h2>
+    <ul class="area-list area-inline">
+      <% area.nearby.forEach(function (n) { %>
+        <li>
+          <% if (n.href) { %><a href="<%= n.href %>"><%= n.name %></a><% } else { %><%= n.name %><% } %>
+          <% if (n.km !== null && n.km !== undefined) { %> <span class="muted small"><%= t('area.nearbyKm', { km: n.km }) %></span><% } %>
+        </li>
+      <% }); %>
+    </ul>
+  </section>
+<% } %>
+
+<% if (area.places.length) { %>
+  <section class="section area-block">
+    <h2 class="small muted"><%= t('area.places') %></h2>
+    <ul class="area-list">
+      <% area.places.forEach(function (pl) { %>
+        <li>
+          <% if (pl.osmUrl) { %><a href="<%= pl.osmUrl %>" rel="noopener" target="_blank"><%= pl.name %></a><% } else { %><%= pl.name %><% } %>
+          <span class="muted small"><%= pl.type %></span>
+        </li>
+      <% }); %>
+    </ul>
+  </section>
+<% } %>
+
+<% if (area.businesses.length) { %>
+  <section class="section area-block">
+    <h2 class="small muted"><%= t('area.businesses') %></h2>
+    <ul class="area-list">
+      <% area.businesses.forEach(function (b) { %>
+        <li><a href="<%= b.url %>" rel="noopener"><%= b.name %></a><% if (b.category) { %> <span class="muted small"><%= b.category %></span><% } %></li>
+      <% }); %>
+    </ul>
+  </section>
+<% } %>

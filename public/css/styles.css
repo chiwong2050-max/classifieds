@@ -351,6 +351,24 @@ legend { font-weight: 700; padding: 0 6px; }
 .prose ul li { margin-bottom: 6px; }
 .img-count { color: var(--text-muted); font-size: .85rem; }
 
+/* --- Area hub (suburb / town pages) --------------------------------------- */
+.area-hero { margin-bottom: var(--space-5); }
+.area-title { margin-bottom: var(--space-1); }
+.area-meta { margin-top: 0; }
+.area-intro { max-width: 72ch; }
+.area-credit { margin-top: var(--space-2); }
+.area-photo { margin: 0 0 var(--space-5); }
+/* Fixed box so the lazy-loaded photo never shifts the layout. */
+.area-photo img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); }
+.area-photo figcaption { margin-top: 6px; }
+.area-pop { margin: var(--space-3) 0 var(--space-5); }
+.area-block { margin-bottom: var(--space-5); }
+.area-list { list-style: none; padding: 0; margin: var(--space-2) 0 0; display: grid; gap: 2px; }
+.area-list li { display: flex; align-items: baseline; gap: var(--space-2); }
+/* 44px minimum tap targets for every area link (mobile-first). */
+.area-list a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 2px; }
+.area-inline { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+
 /* --- Breakpoints ---------------------------------------------------------- */
 @media (min-width: 640px) {
   h1 { font-size: 1.9rem; }

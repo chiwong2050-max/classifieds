@@ -78,6 +78,11 @@ No React. No client-side framework. Pages are just HTML.
     serves the home page offline.
 11. **Developer friendly** — `.env.example`, a seed script with clearly-marked
     `[SAMPLE]` ads, and a DB reset script.
+12. **Area pages** — each suburb or town can become a mini community hub
+    (Wikipedia intro, Commons photo, population, nearby areas, local places and
+    businesses) with that area's free ads as one section. Content is loaded
+    **only** from real JSON files dropped by the server team — never scraped,
+    never invented. See [Area pages](#area-pages).
 
 ---
 
@@ -175,6 +180,55 @@ personals / dating / adult** options.
 
 ---
 
+## Area pages
+
+Each suburb or town can get an **area page** at `/<country>/<state>/<slug>/`
+(e.g. [`/au/vic/bendigo/`](https://au.listnear.app/au/vic/bendigo/)) — a small
+community hub built **only from real data**, with that area's free classifieds as
+one section. The page is plain server-rendered HTML (no client framework).
+
+### Data comes from files (no scraping)
+
+The app never scrapes. The server team drops one JSON file per area at
+`<AREAS_DIR>/<cc>/<state>/<slug>.json` (default
+[`data/areas/`](data/areas), e.g. `data/areas/au/vic/bendigo.json`). The loader
+in [`src/config/areas.js`](src/config/areas.js) validates every field and
+**skips a bad file with a single log line** — it never throws, and one broken
+file never takes a page (or the process) down.
+
+Schema:
+
+| Field | Shape |
+| ----- | ----- |
+| `name`, `state`, `country`, `lga` | strings (`name` is required) |
+| `wiki` | `{ extract, title, url, licence: "CC BY-SA 4.0" }` or `null` |
+| `photo` | `{ file, url, author, licence, commonsUrl }` or `null` — **Wikimedia Commons only** |
+| `population` | `{ value, year, source, sourceUrl }` or `null` |
+| `nearby` | `[{ name, slug, km }]` (`km` may be `null`) |
+| `places` | `[{ name, type, osmUrl }]` (e.g. parks, libraries, playgrounds from OpenStreetMap) |
+| `businesses` | `[{ name, category, url }]` (links to our own directory listings) |
+
+Leave anything unknown as `null` — no invented numbers, posts or businesses.
+Sections render **only when their data exists**; there is no placeholder content.
+The three files committed under `data/areas/au/vic/` (bendigo, ballarat, geelong)
+are **tests-only examples** built from visible Wikipedia / Wikimedia Commons /
+OpenStreetMap data.
+
+### Richness gate and the indexing kill-switch
+
+A page is **rich** if it has a Wikipedia extract **and** at least two other real
+sections, **or** at least one real post. `AREA_PAGES_INDEXING` (default
+`false`) is the kill-switch:
+
+- **off** → every area page is `noindex,follow` and **no** area page appears in
+  `/sitemap.xml`;
+- **on** → only **rich** pages become `index,follow` and are listed in the
+  sitemap.
+
+The flag ships **off** and is turned on only after the content is reviewed.
+
+---
+
 ## Getting started
 
 ### Prerequisites
@@ -244,6 +298,8 @@ The app boots with safe defaults and **zero config** for local development.
 | `UPLOAD_DIR` | Where processed images are stored. | `public/uploads` |
 | `MAX_IMAGES_PER_AD` | Max images per ad. | `6` |
 | `AD_EXPIRY_DAYS` | Days before an ad expires. | `30` |
+| `AREAS_DIR` | Root directory for area JSON files (`<AREAS_DIR>/<cc>/<state>/<slug>.json`). | `data/areas` |
+| `AREA_PAGES_INDEXING` | Kill-switch for area-page indexing. Off → all area pages `noindex,follow` and excluded from the sitemap. | `false` |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile keys. Leave blank to disable. | blank |
 | `EMERGENCY_NUMBER` | Emergency number shown on the safety page. | market file |
 | `SUPPORT_URL` | Footer support link. | market file |
@@ -268,6 +324,7 @@ listnear/
 │  ├─ utils/             # helpers, url builders, JSON-LD builders
 │  └─ server.js          # App entrypoint: security, sessions, routes, maintenance
 ├─ locales/              # UI text: en.json (base) + <language>.json / en-AU.json, en-US.json overrides
+├─ data/areas/           # Area JSON, one file per suburb/town: <cc>/<state>/<slug>.json
 ├─ views/                # EJS templates (partials + pages, incl. admin)
 ├─ public/               # CSS, vanilla JS, icons, manifest, service worker, uploads
 ├─ SOURCES.md            # Provenance & licences for country/region/city data
@@ -282,7 +339,7 @@ listnear/
 | GET | `/` | Home: categories, counts, recent ads. |
 | GET | `/browse/` | Full category + location index. |
 | GET | `/search` | Global keyword search (filters: category, location, price). |
-| GET | `/:country/:state?/:city?/:category?` | Clean location/category listings. |
+| GET | `/:country/:state?/:city?/:category?` | Clean location/category listings. A city URL with an area JSON file renders the [area hub](#area-pages) above its listings. |
 | GET | `/ad/:publicId/:slug?` | Ad detail (301 to canonical slug). |
 | POST | `/ad/:publicId/contact` | Contact relay (hides poster email). |
 | POST | `/ad/:publicId/report` | Report an ad. |

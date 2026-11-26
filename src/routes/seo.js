@@ -2,6 +2,7 @@
 
 const config = require('../config');
 const ads = require('../db/ads');
+const areas = require('../config/areas');
 const { adUrl } = require('../utils/urls');
 
 function escapeXml(str) {
@@ -68,6 +69,19 @@ module.exports = function seoRoutes(app) {
       if (!seen.has(catLoc)) {
         seen.add(catLoc);
         urls.push({ loc: catLoc, changefreq: 'daily', priority: '0.6' });
+      }
+    }
+
+    // Area pages. Only listed when the indexing kill-switch is on AND the page
+    // is rich (a Wikipedia intro plus two real sections, or a real post).
+    if (config.areaPages.indexing) {
+      for (const area of areas.listAreas(config.site.country)) {
+        const postCount = ads.countByLocation(area.country, area.state, area.slug);
+        if (!areas.isRich(area, postCount)) continue;
+        const loc = `${config.site.url}/${area.country}/${area.state}/${area.slug}/`;
+        if (seen.has(loc)) continue;
+        seen.add(loc);
+        urls.push({ loc, changefreq: 'weekly', priority: '0.6' });
       }
     }
 

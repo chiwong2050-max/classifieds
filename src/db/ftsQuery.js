@@ -27,4 +27,25 @@ function toFtsPhrase(query) {
   return `"${cleaned}"`;
 }
 
-module.exports = { toFtsPhrase };
+/**
+ * The same input as {@link toFtsPhrase}, but each word is quoted and combined
+ * with `AND`. Used as a fallback when the exact phrase matched nothing, so a
+ * query like "red bike" still finds an ad that contains both words but not the
+ * phrase. Every word is quoted individually, so none can act as FTS5 syntax.
+ *
+ * @returns {string|null} an FTS5 query, or null for single-word / empty input
+ *   (in which case the phrase form is already equivalent).
+ */
+function toFtsAllWords(query) {
+  const cleaned = String(query == null ? '' : query)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return null;
+  const words = cleaned.split(' ').filter(Boolean);
+  if (words.length < 2) return null;
+  return words.map((word) => `"${word}"`).join(' AND ');
+}
+
+module.exports = { toFtsPhrase, toFtsAllWords };

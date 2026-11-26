@@ -1,6 +1,12 @@
 <nav class="breadcrumbs" aria-label="<%= t('breadcrumb.aria') %>">
   <a href="/"><%= t('breadcrumb.home') %></a>
-  <% items.forEach(function (it) { %>
+  <%
+    // The home link is always rendered first; drop any caller-supplied "Home"
+    // crumb so a page can never read "Home › Home".
+    var homeLabel = String(t('breadcrumb.home'));
+    var trail = (items || []).filter(function (it) { return String(it.name) !== homeLabel; });
+  %>
+  <% trail.forEach(function (it) { %>
     <span class="sep" aria-hidden="true">›</span>
     <% if (it.url) { %>
       <a href="<%= it.url %>"><%= it.name %></a>

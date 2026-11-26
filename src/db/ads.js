@@ -2,7 +2,7 @@
 
 const db = require('./index');
 const { shortId, randomToken, sqliteNow, sqliteNowPlusDays } = require('../utils/helpers');
-const { toFtsPhrase } = require('./ftsQuery');
+const { toFtsPhrase, toFtsAllWords } = require('./ftsQuery');
 const config = require('../config');
 
 // ---------------------------------------------------------------------------
@@ -159,14 +159,12 @@ const SORTS = {
 };
 
 /**
- * Query active ads with optional filters and full-text search.
+ * Run one search with a pre-escaped FTS query string (`ftsPhrase`), or without
+ * FTS when that is null.
  * @returns {{ rows: object[], total: number }}
  */
-function searchAds(filters = {}, { limit = 24, offset = 0, sort = 'recent' } = {}) {
+function runSearch(filters, { limit, offset, sort, ftsPhrase }) {
   const params = {};
-  // Escape the user's query into a literal FTS5 phrase before it reaches
-  // `MATCH`, otherwise FTS operators crash the /search page.
-  const ftsPhrase = toFtsPhrase(filters.q);
   const useFts = Boolean(ftsPhrase);
   const where = buildFilterSql(filters, params, { useFts, ftsPhrase });
   const orderBy = SORTS[sort] || SORTS.recent;
@@ -189,6 +187,28 @@ function searchAds(filters = {}, { limit = 24, offset = 0, sort = 'recent' } = {
     .all({ ...params, limit, offset });
 
   return { rows: rows.map(hydrateAd), total };
+}
+
+/**
+ * Query active ads with optional filters and full-text search.
+ *
+ * The user's words are matched as an exact phrase first (see ftsQuery). If that
+ * finds nothing and the query has more than one word, we retry with all the
+ * words AND-ed together, so a search still works when the words appear apart.
+ * @returns {{ rows: object[], total: number }}
+ */
+function searchAds(filters = {}, { limit = 24, offset = 0, sort = 'recent' } = {}) {
+  const phrase = toFtsPhrase(filters.q);
+  const result = runSearch(filters, { limit, offset, sort, ftsPhrase: phrase });
+
+  if (result.total === 0) {
+    const allWords = toFtsAllWords(filters.q);
+    if (allWords && allWords !== phrase) {
+      return runSearch(filters, { limit, offset, sort, ftsPhrase: allWords });
+    }
+  }
+
+  return result;
 }
 
 function countByLocation(country, state, city, category) {

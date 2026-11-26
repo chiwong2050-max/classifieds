@@ -91,6 +91,21 @@
     "metaTitle": "Browse all categories and locations",
     "metaDescription": "Browse every category and location on {siteName} - jobs, for sale, vehicles, property, services, community, pets and events."
   },
+  "area": {
+    "wikiAttribution": "From Wikipedia",
+    "wikiLicence": "Text available under CC BY-SA 4.0",
+    "photoAlt": "Photo of {area}",
+    "photoCredit": "Photo by {author}",
+    "photoOnCommons": "Wikimedia Commons",
+    "population": "Population {value}",
+    "populationYear": "Population {value} ({year})",
+    "nearby": "Nearby towns and suburbs",
+    "nearbyKm": "{km} km",
+    "places": "Local places",
+    "businesses": "Local businesses",
+    "freeAdsTitle": "Free ads in {area}",
+    "postFreeAd": "Post a free ad in {area}"
+  },
   "listing": {
     "allCategories": "All categories",
     "inPlace": "in {place}",

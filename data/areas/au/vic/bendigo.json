@@ -1,0 +1,30 @@
+{
+  "name": "Bendigo",
+  "state": "vic",
+  "country": "au",
+  "lga": "City of Greater Bendigo",
+  "wiki": {
+    "extract": "Bendigo, formerly known as Sandhurst, is an Australian city in north-central Victoria. The city is located in the Bendigo Valley near the geographical centre of the state and approximately 150 kilometres (93 mi) north-west of Melbourne, the state capital.",
+    "title": "Bendigo",
+    "url": "https://en.wikipedia.org/wiki/Bendigo",
+    "licence": "CC BY-SA 4.0"
+  },
+  "photo": {
+    "file": "Bendigo_CBD.jpg",
+    "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Bendigo_CBD.jpg",
+    "author": "Michael Coghlan",
+    "licence": "CC BY-SA 2.0",
+    "commonsUrl": "https://commons.wikimedia.org/wiki/File:Bendigo_CBD.jpg"
+  },
+  "population": null,
+  "nearby": [
+    { "name": "Castlemaine", "slug": "castlemaine", "km": null },
+    { "name": "Kyneton", "slug": "kyneton", "km": null },
+    { "name": "Maryborough", "slug": "maryborough", "km": null }
+  ],
+  "places": [
+    { "name": "Rosalind Park", "type": "park", "osmUrl": "https://www.openstreetmap.org/way/144035839" },
+    { "name": "Bendigo Library", "type": "library", "osmUrl": "https://www.openstreetmap.org/way/37555113" }
+  ],
+  "businesses": []
+}

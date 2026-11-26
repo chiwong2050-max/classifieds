@@ -1,13 +1,22 @@
 <%- include('../partials/head') %>
+<% var hasArea = typeof areaHub !== 'undefined' && areaHub; %>
 <div class="container mt-4">
   <%- include('../partials/breadcrumbs', { items: crumbs }) %>
 
+  <% if (hasArea) { %>
+    <%- include('../partials/areaHub', { area: areaHub }) %>
+  <% } %>
+
   <div class="section-head">
     <div>
-      <h1 class="mb-0"><%= loc.category ? (categories.find(c => c.slug === loc.category) || {}).name : t('listing.allCategories') %><% if (loc.cityName) { %> <%= t('listing.inPlace', { place: loc.cityName }) %><% } else if (loc.stateName) { %> <%= t('listing.inPlace', { place: loc.stateName }) %><% } else { %> <%= t('listing.inPlace', { place: loc.countryName }) %><% } %></h1>
+      <% if (hasArea) { %>
+        <h2 class="mb-0"><%= t('area.freeAdsTitle', { area: areaHub.name }) %></h2>
+      <% } else { %>
+        <h1 class="mb-0"><%= loc.category ? (categories.find(c => c.slug === loc.category) || {}).name : t('listing.allCategories') %><% if (loc.cityName) { %> <%= t('listing.inPlace', { place: loc.cityName }) %><% } else if (loc.stateName) { %> <%= t('listing.inPlace', { place: loc.stateName }) %><% } else { %> <%= t('listing.inPlace', { place: loc.countryName }) %><% } %></h1>
+      <% } %>
       <p class="muted"><%= tp('listing.count', total) %></p>
     </div>
-    <a class="btn btn-primary" href="/post/?country=<%= loc.country %>&state=<%= loc.state || '' %>&city=<%= loc.city || '' %>&category=<%= loc.category || '' %>"><%= t('listing.postHere') %></a>
+    <a class="btn btn-primary" href="/post/?country=<%= loc.country %>&state=<%= loc.state || '' %>&city=<%= loc.city || '' %>&category=<%= loc.category || '' %>"><%= hasArea ? t('area.postFreeAd', { area: areaHub.name }) : t('listing.postHere') %></a>
   </div>
 
   <% if (loc.category === 'pets') { %>

@@ -47,6 +47,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // another's images.
 const UPLOAD_BASE = path.resolve(ROOT, process.env.UPLOAD_DIR || 'public/uploads');
 
+// Area-page content. One JSON file per suburb/town lives at
+// `<dir>/<cc>/<state>/<slug>.json`; the loader validates and skips bad files.
+// Resolved on access so local runs and tests can point AREAS_DIR elsewhere.
+function areasDir() {
+  return path.resolve(ROOT, process.env.AREAS_DIR || 'data/areas');
+}
+
 // --- Default (fallback) market ---------------------------------------------
 const defaultSite = siteFor(DEFAULT_CODE, { applyEnv: true });
 
@@ -143,6 +150,22 @@ const config = {
   // boolean documents that stance and gives a future change one place to flip.
   ads: {
     enabled: bool(process.env.ADS_ENABLED, false),
+  },
+
+  // Area pages: a mini community hub per suburb/town, assembled from JSON
+  // files dropped by the server team (see src/config/areas.js). Both values
+  // are live getters so tests and local runs can change them per request.
+  areas: {
+    get dir() {
+      return areasDir();
+    },
+  },
+  // Kill-switch for area-page indexing. While false every area page is
+  // noindex and none is listed in the sitemap. Stays false by default.
+  areaPages: {
+    get indexing() {
+      return bool(process.env.AREA_PAGES_INDEXING, false);
+    },
   },
 
   turnstile: {
