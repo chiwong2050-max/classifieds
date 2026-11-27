@@ -54,6 +54,31 @@ function areasDir() {
   return path.resolve(ROOT, process.env.AREAS_DIR || 'data/areas');
 }
 
+/**
+ * Area-hub rollout allow-list. The value is a comma-separated set of country
+ * codes or `cc:state` pairs, e.g. `au`, `au:vic,au:nsw` or `au,us:ca`.
+ *
+ * Empty / unset means "no new rollout restriction": every area that has a JSON
+ * file renders (the behaviour before this switch existed). A non-empty list
+ * narrows rendering to the named places only, so a US state can stay off while
+ * AU rolls out. This gate decides whether a hub may render at all - it is
+ * independent of AREA_PAGES_INDEXING, which only decides whether a rendered,
+ * rich page may be indexed.
+ */
+function areaEnabled(country, state) {
+  const raw = String(process.env.AREA_PAGES_ENABLED || '').trim();
+  if (!raw) return true;
+  const cc = String(country || '').toLowerCase();
+  const st = String(state || '').toLowerCase();
+  for (const part of raw.split(',')) {
+    const [partCountry, partState] = part.trim().toLowerCase().split(':');
+    if (!partCountry || partCountry !== cc) continue;
+    // A bare country code enables every state; `cc:state` only that state.
+    if (!partState || partState === st) return true;
+  }
+  return false;
+}
+
 // --- Default (fallback) market ---------------------------------------------
 const defaultSite = siteFor(DEFAULT_CODE, { applyEnv: true });
 
@@ -165,6 +190,11 @@ const config = {
   areaPages: {
     get indexing() {
       return bool(process.env.AREA_PAGES_INDEXING, false);
+    },
+    // Rollout allow-list: may a hub render for this country/state at all?
+    // Live (reads env every call) so tests and local runs can change it.
+    isEnabled(country, state) {
+      return areaEnabled(country, state);
     },
   },
 

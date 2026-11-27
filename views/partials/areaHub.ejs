@@ -11,7 +11,8 @@
 %>
 <header class="area-hero">
   <h1 class="area-title"><%= area.name %></h1>
-  <% if (area.lga) { %><p class="muted area-meta"><%= area.lga %></p><% } %>
+  <% var areaRegion = area.lga || area.county; %>
+  <% if (areaRegion) { %><p class="muted area-meta"><%= areaRegion %></p><% } %>
 
   <% if (area.wiki) { %>
     <p class="area-intro"><%= area.wiki.extract %></p>

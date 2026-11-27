@@ -72,8 +72,10 @@ module.exports = function seoRoutes(app) {
       }
     }
 
-    // Area pages. Only listed when the indexing kill-switch is on AND the page
+    // Area pages. Listed only when the indexing kill-switch is on AND the page
     // is rich (a Wikipedia intro plus two real sections, or a real post).
+    // `listAreas` also honours the AREA_PAGES_ENABLED rollout allow-list, so a
+    // disabled country/state can never be listed here.
     if (config.areaPages.indexing) {
       for (const area of areas.listAreas(config.site.country)) {
         const postCount = ads.countByLocation(area.country, area.state, area.slug);

@@ -1,0 +1,32 @@
+{
+  "name": "Sacramento",
+  "state": "ca",
+  "country": "us",
+  "lga": null,
+  "county": "Sacramento County",
+  "wiki": {
+    "extract": "Sacramento is the capital city of the U.S. state of California. The county seat of Sacramento County, it is located at the confluence of the Sacramento and American Rivers in the Sacramento Valley. It is the fourth-most populous city in Northern California, sixth-most populous city in the state, and 35th-most populous city in the United States, with a population of 524,943 at the 2020 census. The Sacramento metropolitan area, with 2.46 million residents, is the 27th-largest metropolitan area in the country.",
+    "title": "Sacramento, California",
+    "url": "https://en.wikipedia.org/wiki/Sacramento,_California",
+    "licence": "CC BY-SA 4.0"
+  },
+  "photo": {
+    "file": "Sacramento,_CA_skyline_(cropped).jpg",
+    "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Sacramento,_CA_skyline_(cropped).jpg",
+    "author": "Quintin Soloviev",
+    "licence": "CC BY 4.0",
+    "commonsUrl": "https://commons.wikimedia.org/wiki/File:Sacramento,_CA_skyline_(cropped).jpg"
+  },
+  "population": {
+    "value": 524943,
+    "year": 2020,
+    "source": "United States Census Bureau, 2020 census",
+    "sourceUrl": "https://www.census.gov/"
+  },
+  "nearby": [
+    { "name": "Davis", "slug": "davis", "km": null },
+    { "name": "Roseville", "slug": "roseville", "km": null }
+  ],
+  "places": [],
+  "businesses": []
+}

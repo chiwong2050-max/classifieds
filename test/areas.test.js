@@ -1,15 +1,19 @@
 'use strict';
 
 /**
- * Area pages (Victoria, Australia).
+ * Area pages (AU + US).
  *
- * Covers the file loader (validation, skip-bad-files, richness gate), the
- * area page render (Wikipedia attribution, Commons credit, kill-switch robots),
- * the empty state for an area with no data, the sitemap richness gate, the
- * breadcrumb de-duplication and the all-words search fallback.
+ * Covers the file loader (validation, skip-bad-files, richness gate, the
+ * Commons-only photo rule, the optional county field), the two environment
+ * switches (AREA_PAGES_ENABLED rollout allow-list, AREA_PAGES_INDEXING
+ * kill-switch), the area page render (Wikipedia attribution, Commons credit,
+ * noindex robots), the empty state for an area with no data, the sitemap
+ * gates, the breadcrumb de-duplication, the all-words search fallback and a
+ * dry-run of the builder against tiny fixture inputs.
  *
  * The server is pointed at throwaway DB + area directories before it is
- * loaded, so the real database and the committed fixtures are never touched.
+ * loaded, so the real database and the tracked fixtures are never touched.
+ * No test reaches the network.
  *
  * Run with: `npm test` (node --test).
  */
@@ -23,7 +27,8 @@ const path = require('path');
 // --- Isolate the app from real data ----------------------------------------
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'listnear-areas-'));
 const AREAS_TMP = path.join(TMP, 'areas');
-const REPO_AREAS = path.resolve(__dirname, '../data/areas');
+// Tracked fixtures only: production `data/areas/` output is never committed.
+const REPO_AREAS = path.resolve(__dirname, 'fixtures/areas');
 
 fs.cpSync(REPO_AREAS, AREAS_TMP, { recursive: true });
 const VIC_DIR = path.join(AREAS_TMP, 'au', 'vic');
@@ -71,6 +76,76 @@ test('area pages', async (t) => {
 
     const slugs = areas.listAreas('au', 'vic').map((a) => a.slug).sort();
     assert.deepEqual(slugs, ['ballarat', 'bendigo', 'geelong', 'smalltown']);
+  });
+
+  await t.test('loader: NSW (AU) and CA (US) fixtures validate against the schema', () => {
+    const newcastle = areas.loadArea('au', 'nsw', 'newcastle');
+    assert.ok(newcastle, 'nsw fixture should load');
+    assert.equal(newcastle.name, 'Newcastle');
+    assert.equal(newcastle.state, 'nsw');
+    assert.equal(newcastle.country, 'au');
+    assert.equal(newcastle.lga, 'City of Newcastle');
+    assert.equal(newcastle.county, null);
+    assert.ok(newcastle.wiki.extract.length > 20);
+    assert.match(newcastle.photo.url, /^https:\/\/commons\.wikimedia\.org\//);
+    assert.deepEqual(areas.listAreas('au', 'nsw').map((a) => a.slug).sort(), ['newcastle']);
+
+    const sacramento = areas.loadArea('us', 'ca', 'sacramento');
+    assert.ok(sacramento, 'us fixture should load');
+    assert.equal(sacramento.name, 'Sacramento');
+    assert.equal(sacramento.state, 'ca');
+    assert.equal(sacramento.country, 'us');
+    assert.equal(sacramento.lga, null);
+    assert.equal(sacramento.county, 'Sacramento County');
+    assert.equal(sacramento.population.value, 524943);
+    assert.equal(sacramento.population.year, 2020);
+    assert.match(sacramento.photo.url, /^https:\/\/commons\.wikimedia\.org\//);
+    assert.equal(areas.isRich(sacramento, 0), true);
+  });
+
+  await t.test('a non-Commons photo URL is dropped, the rest of the area still loads', () => {
+    const dir = path.join(AREAS_TMP, 'us', 'ca');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'badphoto.json'),
+      JSON.stringify({
+        name: 'Badphoto',
+        state: 'ca',
+        country: 'us',
+        photo: { file: 'x.jpg', url: 'https://example.com/x.jpg' },
+      })
+    );
+    const area = areas.loadArea('us', 'ca', 'badphoto');
+    assert.ok(area, 'the area still loads');
+    assert.equal(area.photo, null, 'only Wikimedia Commons photos are allowed');
+  });
+
+  await t.test('AREA_PAGES_ENABLED rollout allow-list gates rendering only', () => {
+    // Unset -> no new restriction: every market with a file renders.
+    assert.equal(config.areaPages.isEnabled('au', 'vic'), true);
+    assert.equal(config.areaPages.isEnabled('us', 'ca'), true);
+    // The indexing kill-switch is untouched by rollout and stays off.
+    assert.equal(config.areaPages.indexing, false);
+
+    process.env.AREA_PAGES_ENABLED = 'au:vic';
+    try {
+      assert.ok(areas.loadArea('au', 'vic', 'bendigo'), 'au:vic stays on');
+      assert.equal(areas.loadArea('au', 'nsw', 'newcastle'), null, 'au:nsw is off');
+      assert.equal(areas.loadArea('us', 'ca', 'sacramento'), null, 'us is off');
+      assert.deepEqual(areas.listAreas('au', 'nsw'), [], 'no nsw area is listed');
+    } finally {
+      delete process.env.AREA_PAGES_ENABLED;
+    }
+
+    process.env.AREA_PAGES_ENABLED = 'au,us:ca';
+    try {
+      // A bare country code enables every state in it; `us:ca` only that state.
+      assert.ok(areas.loadArea('au', 'nsw', 'newcastle'));
+      assert.ok(areas.loadArea('us', 'ca', 'sacramento'));
+      assert.equal(config.areaPages.isEnabled('us', 'tx'), false);
+    } finally {
+      delete process.env.AREA_PAGES_ENABLED;
+    }
   });
 
   await t.test('richness gate', () => {
@@ -179,6 +254,77 @@ test('area pages', async (t) => {
         assert.match(rich.html, /<meta name="robots" content="index,follow">/);
       } finally {
         delete process.env.AREA_PAGES_INDEXING;
+      }
+    });
+    await t.test('sitemap listing needs indexing AND rollout AND richness', async () => {
+      delete process.env.AREA_PAGES_ENABLED;
+      assert.equal(config.areaPages.indexing, false);
+      // Indexing off: nothing listed even though rollout is open.
+      assert.doesNotMatch((await get('/sitemap.xml')).html, /\/au\/vic\/bendigo\//);
+
+      process.env.AREA_PAGES_INDEXING = 'true';
+      try {
+        // Rollout narrowed to au:vic -> the NSW rich page must not be listed.
+        process.env.AREA_PAGES_ENABLED = 'au:vic';
+        const restricted = await get('/sitemap.xml');
+        assert.match(restricted.html, /\/au\/vic\/bendigo\//);
+        assert.doesNotMatch(restricted.html, /\/au\/nsw\/newcastle\//);
+
+        // Rollout opened to the whole country -> the NSW rich page appears.
+        process.env.AREA_PAGES_ENABLED = 'au';
+        const opened = await get('/sitemap.xml');
+        assert.match(opened.html, /\/au\/nsw\/newcastle\//);
+        // The AU market's sitemap never lists another country's areas.
+        assert.doesNotMatch(opened.html, /\/us\/ca\//);
+      } finally {
+        delete process.env.AREA_PAGES_INDEXING;
+        delete process.env.AREA_PAGES_ENABLED;
+      }
+    });
+
+    await t.test('builder dry-run over tiny fixtures: schema, real km only, no writes', async () => {
+      const build = require('../scripts/areas/build');
+      const srcDir = path.resolve(__dirname, 'fixtures/areas-src');
+      const outDir = path.join(TMP, 'areas-out');
+
+      const result = await build.main([
+        '--sources', srcDir, '--out', outDir, '--country', 'au', '--state', 'nsw', '--dry-run',
+      ]);
+      assert.ok(result.dryRun, 'dry-run mode is reported');
+      const bySlug = new Map(result.areas.map((a) => [a.slug, a]));
+      assert.deepEqual([...bySlug.keys()].sort(), ['cessnock', 'maitland', 'newcastle']);
+
+      const newcastle = bySlug.get('newcastle');
+      assert.ok(newcastle.wiki.extract.length > 20);
+      assert.match(newcastle.photo.url, /^https:\/\/commons\.wikimedia\.org\//);
+      const maitland = newcastle.nearby.find((n) => n.slug === 'maitland');
+      assert.ok(maitland, 'maitland is a neighbour');
+      assert.equal(typeof maitland.km, 'number');
+      assert.ok(maitland.km > 0 && maitland.km < 120);
+      // A postcode-centroid place (no unique coordinate) never becomes a distance.
+      assert.equal(newcastle.nearby.some((n) => n.slug === 'cessnock'), false);
+      assert.deepEqual(bySlug.get('cessnock').nearby, []);
+
+      // Dry-run writes nothing.
+      assert.equal(fs.existsSync(outDir), false);
+    });
+
+    await t.test('builder output loads through the real loader', async () => {
+      const build = require('../scripts/areas/build');
+      const srcDir = path.resolve(__dirname, 'fixtures/areas-src');
+      const outDir = path.join(TMP, 'areas-built');
+      await build.main(['--sources', srcDir, '--out', outDir, '--country', 'us', '--state', 'ca']);
+
+      const previous = process.env.AREAS_DIR;
+      process.env.AREAS_DIR = outDir;
+      try {
+        const sacramento = areas.loadArea('us', 'ca', 'sacramento');
+        assert.ok(sacramento, 'builder output is loadable by areas.js');
+        assert.equal(sacramento.county, 'Sacramento County');
+        assert.equal(sacramento.population.value, 524943);
+        assert.equal(areas.isRich(sacramento, 0), true);
+      } finally {
+        process.env.AREAS_DIR = previous;
       }
     });
   } finally {

@@ -1,0 +1,28 @@
+{
+  "name": "Newcastle",
+  "state": "nsw",
+  "country": "au",
+  "lga": "City of Newcastle",
+  "wiki": {
+    "extract": "Newcastle, also known as Greater Newcastle, is a large metropolitan area and the second-most-populous such area of New South Wales, Australia. It includes the cities of Newcastle and Lake Macquarie and it is the hub of the Lower Hunter region, which includes most parts of the cities of Newcastle, Lake Macquarie, Maitland, Cessnock, and Port Stephens Council. Newcastle is also known by its colloquial nickname, Newy. A Newcastle resident can also be known as a Novocastrian.",
+    "title": "Newcastle, New South Wales",
+    "url": "https://en.wikipedia.org/wiki/Newcastle,_New_South_Wales",
+    "licence": "CC BY-SA 4.0"
+  },
+  "photo": {
+    "file": "The_Custom_House,_Newcastle.jpg",
+    "url": "https://commons.wikimedia.org/wiki/Special:FilePath/The_Custom_House,_Newcastle.jpg",
+    "author": "Hugh Llewelyn",
+    "licence": "CC BY-SA 2.0",
+    "commonsUrl": "https://commons.wikimedia.org/wiki/File:The_Custom_House,_Newcastle.jpg"
+  },
+  "population": null,
+  "nearby": [
+    { "name": "Maitland", "slug": "maitland", "km": null },
+    { "name": "Cessnock", "slug": "cessnock", "km": null }
+  ],
+  "places": [
+    { "name": "Newcastle Museum", "type": "museum", "osmUrl": null }
+  ],
+  "businesses": []
+}

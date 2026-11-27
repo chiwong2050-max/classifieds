@@ -10,6 +10,12 @@
  * Every field is validated. A file that is missing, unreadable, not JSON, or
  * has no usable `name` is skipped with a single log line and this module
  * returns null - it never throws, so one bad file can never take a page down.
+ *
+ * Two independent switches govern area pages (see src/config/index.js):
+ *   - AREA_PAGES_ENABLED (rollout allow-list) decides whether a hub may render
+ *     for a given country/state at all; enforced here in `loadArea`.
+ *   - AREA_PAGES_INDEXING (kill-switch) decides whether a rendered, rich page
+ *     may be indexed / listed in the sitemap; enforced by the routes.
  */
 
 const fs = require('fs');
@@ -137,7 +143,9 @@ function normalize(country, state, slug, raw) {
     // Values from the file win; otherwise infer from the path it was found at.
     state: str(raw.state).toLowerCase() || state,
     country: str(raw.country).toLowerCase() || country,
+    // AU local government area; the US may instead carry an optional county.
     lga: str(raw.lga) || null,
+    county: str(raw.county) || null,
     wiki: normWiki(raw.wiki),
     photo: normPhoto(raw.photo),
     population: normPopulation(raw.population),
@@ -164,6 +172,11 @@ const cache = new Map();
  * @returns {object|null} the normalised area, or null when there is no usable file.
  */
 function loadArea(country, state, slug) {
+  // Rollout allow-list (AREA_PAGES_ENABLED): a country/state that is not
+  // enabled behaves exactly as if it had no file, so its seeded cities still
+  // show plain classifieds but no community hub. Unset means "no restriction".
+  if (!config.areaPages.isEnabled(country, state)) return null;
+
   const file = areaPath(country, state, slug);
   if (!file) return null;
 

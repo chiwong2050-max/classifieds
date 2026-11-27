@@ -154,6 +154,8 @@ function renderListing(req, res, { loc, baseUrl, isSearch = false }) {
   // Area hub: a plain city page (never a category or search page) that has
   // real content dropped by the server team. Sections render only when the
   // data exists (see the areaHub partial); nothing is ever placeholder text.
+  // loadArea also enforces the AREA_PAGES_ENABLED rollout allow-list, so a
+  // disabled country/state simply renders the plain classifieds page.
   let areaHub = !isSearch && loc.city && !loc.category
     ? areas.loadArea(loc.country, loc.state, loc.city)
     : null;

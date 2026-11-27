@@ -1,0 +1,24 @@
+{
+  "newcastle": {
+    "extract": "Newcastle, also known as Greater Newcastle, is a large metropolitan area and the second-most-populous such area of New South Wales, Australia. It includes the cities of Newcastle and Lake Macquarie and it is the hub of the Lower Hunter region.",
+    "title": "Newcastle, New South Wales",
+    "url": "https://en.wikipedia.org/wiki/Newcastle,_New_South_Wales",
+    "file": "The_Custom_House,_Newcastle.jpg",
+    "author": "Hugh Llewelyn",
+    "licence": "CC BY-SA 2.0"
+  },
+  "sacramento": {
+    "extract": "Sacramento is the capital city of the U.S. state of California. The county seat of Sacramento County, it is located at the confluence of the Sacramento and American Rivers in the Sacramento Valley.",
+    "title": "Sacramento, California",
+    "url": "https://en.wikipedia.org/wiki/Sacramento,_California",
+    "file": "Sacramento,_CA_skyline_(cropped).jpg",
+    "author": "Quintin Soloviev",
+    "licence": "CC BY 4.0",
+    "population": {
+      "value": 524943,
+      "year": 2020,
+      "source": "United States Census Bureau, 2020 census",
+      "sourceUrl": "https://www.census.gov/"
+    }
+  }
+}

@@ -189,18 +189,19 @@ one section. The page is plain server-rendered HTML (no client framework).
 
 ### Data comes from files (no scraping)
 
-The app never scrapes. The server team drops one JSON file per area at
-`<AREAS_DIR>/<cc>/<state>/<slug>.json` (default
-[`data/areas/`](data/areas), e.g. `data/areas/au/vic/bendigo.json`). The loader
-in [`src/config/areas.js`](src/config/areas.js) validates every field and
-**skips a bad file with a single log line** — it never throws, and one broken
-file never takes a page (or the process) down.
+The app never scrapes. The **data-build job** (below) writes one JSON file per
+area to `<AREAS_DIR>/<cc>/<state>/<slug>.json` (default `data/areas`, e.g.
+`data/areas/au/vic/bendigo.json`) and the tree is copied onto the app host
+outside git. The loader in [`src/config/areas.js`](src/config/areas.js)
+validates every field and **skips a bad file with a single log line** — it never
+throws, and one broken file never takes a page (or the process) down.
 
 Schema:
 
 | Field | Shape |
 | ----- | ----- |
-| `name`, `state`, `country`, `lga` | strings (`name` is required) |
+| `name` (required), `state`, `country`, `lga` | strings — `lga` is the Australian local government area |
+| `county` | optional string — the US county (used in place of `lga`) |
 | `wiki` | `{ extract, title, url, licence: "CC BY-SA 4.0" }` or `null` |
 | `photo` | `{ file, url, author, licence, commonsUrl }` or `null` — **Wikimedia Commons only** |
 | `population` | `{ value, year, source, sourceUrl }` or `null` |
@@ -208,24 +209,98 @@ Schema:
 | `places` | `[{ name, type, osmUrl }]` (e.g. parks, libraries, playgrounds from OpenStreetMap) |
 | `businesses` | `[{ name, category, url }]` (links to our own directory listings) |
 
-Leave anything unknown as `null` — no invented numbers, posts or businesses.
-Sections render **only when their data exists**; there is no placeholder content.
-The three files committed under `data/areas/au/vic/` (bendigo, ballarat, geelong)
-are **tests-only examples** built from visible Wikipedia / Wikimedia Commons /
-OpenStreetMap data.
+Leave anything unknown as `null` / `[]` — no invented numbers, distances, posts
+or businesses. Sections render **only when their data exists**; there is no
+placeholder content. Whatever is shown is credited: Wikipedia (CC BY-SA 4.0 +
+article link), Wikimedia Commons (creator, licence, file link) and OpenStreetMap
+(ODbL).
+
+Area slugs use the state/territory codes from
+[`src/config/regions.js`](src/config/regions.js): **AU** `nsw`, `vic`, `qld`,
+`wa`, `sa`, `tas`, `act`, `nt`; **US** the state codes `al`…`wy` plus `dc`.
+
+The example areas — `au/vic` (bendigo, ballarat, geelong), `au/nsw` (newcastle)
+and `us/ca` (sacramento) — live under
+[`test/fixtures/areas/`](test/fixtures/areas). They are **tests-only**; generated
+area JSON is never committed (see `.gitignore`).
+
+### Rollout switch: `AREA_PAGES_ENABLED`
+
+Rendering a hub is separate from indexing it, so markets roll out independently.
+`AREA_PAGES_ENABLED` is a comma-separated allow-list of country codes and/or
+`cc:state` pairs:
+
+- **unset / empty** → no new restriction: every area that has a JSON file
+  renders (the behaviour before this switch existed);
+- `au` → only Australian areas render;
+- `au:vic,au:nsw` → only those two Australian states;
+- `au,us:ca` → all of AU, plus California.
+
+When a country/state is not enabled, `loadArea` behaves exactly as if there were
+no file — the seeded city still shows plain classifieds, but no community hub.
+This switch never changes indexing on its own.
 
 ### Richness gate and the indexing kill-switch
 
 A page is **rich** if it has a Wikipedia extract **and** at least two other real
-sections, **or** at least one real post. `AREA_PAGES_INDEXING` (default
-`false`) is the kill-switch:
+sections, **or** at least one real post. `AREA_PAGES_INDEXING` (default `false`)
+is the **only** indexing switch:
 
 - **off** → every area page is `noindex,follow` and **no** area page appears in
   `/sitemap.xml`;
-- **on** → only **rich** pages become `index,follow` and are listed in the
-  sitemap.
+- **on** → only rich pages **that the rollout allow-list also enables** become
+  `index,follow` and are listed in the sitemap.
 
-The flag ships **off** and is turned on only after the content is reviewed.
+A sitemap entry therefore needs all three: indexing on **and** the place enabled
+**and** the page rich. The flag ships **off** and stays off until a server admin
+flips the env after review (target ~2 December 2026). Nothing in this repo turns
+it on.
+
+### Server data-build job (`scripts/areas/`)
+
+The job turns local source caches into that JSON tree. It is **not started by the
+web process**: a server admin runs it, then copies the output to the app host. It
+reads local caches first and only touches the network as an explicit last resort
+(`--allow-network`, rate-limited to one request/second and cached per response).
+
+It runs on the host that holds the caches (**today: UltaHost**, `82.23.146.45`);
+point `--sources` at a directory built from, or symlinked to, these paths:
+
+| Source | Path on the data host |
+| ------ | --------------------- |
+| OpenStreetMap extracts — clip a bbox per area with `osmium` (no Overpass) | `/root/geofabrik/pbf/AU.pbf`, `/root/geofabrik/pbf/US.pbf`, plus the `us-*-latest.osm.pbf` region files for a single US state |
+| Wikipedia / Commons cache (not AU-only) | `/root/aw-wiki/wd.sqlite` (`it`/`pp`/`en`/`mt`/`ph`), `/root/aw-wiki/places.tsv`, `/root/as-wiki/towns.tsv` |
+| Postcode names — names only, **never** distances (centroid table) | `/root/ap_suburbs.csv` |
+| Directory databases (real local hits only) | australiaweb.net, localaus.xyz, eatzap.app, findacarer.app (AU) · localusa.app, eatzap.app (US) |
+
+```bash
+# Trial one state without writing anything:
+node scripts/areas/build.js --country au --state vic \
+  --sources /srv/areas-src --out data/areas-out --dry-run
+
+# Write one state, low impact (also honours /usr/local/bin/main-ok.sh if present):
+nice -n 19 ionice -c idle node scripts/areas/build.js \
+  --country au --state nsw --sources /srv/areas-src --out data/areas-out
+```
+
+Flags: `--country`, `--state`, `--sources` (default `data/areas-src`), `--out`
+(default `data/areas-out`), `--cache` (default `.cache/areas`), `--nearby-max-km`,
+`--nearby-limit`, `--limit`, `--dry-run`, `--allow-network`. Writes are staged
+then renamed into place (atomic, idempotent). Do **not** schedule it at 03:00
+Australia/Melbourne.
+
+`--sources` holds the local caches: `areas.csv` (the place list:
+`name,state,country,lga,county,slug,postcode`), `wiki.json` (Wikipedia/Commons
+per slug), `towns.tsv` (`slug,name,lat,lon,unique` — distances come **only** from
+rows flagged `unique`, so a postcode centroid never becomes a `km`), and optional
+`places.json` / `businesses.json` / `nearby.json`. US population is written only
+from a local, attributed Census cache (year + geography + URL); with no such file
+the section is skipped rather than guessed.
+
+Deployment: copy the finished tree into the app host's `AREAS_DIR` (OVH #2,
+`51.38.60.110`, `listnear.service` on `127.0.0.1:3055`, `AREAS_DIR=data/areas`,
+`AREA_PAGES_INDEXING=false`), outside git. The app host holds **no** extracts,
+caches or directory databases.
 
 ---
 
@@ -298,8 +373,9 @@ The app boots with safe defaults and **zero config** for local development.
 | `UPLOAD_DIR` | Where processed images are stored. | `public/uploads` |
 | `MAX_IMAGES_PER_AD` | Max images per ad. | `6` |
 | `AD_EXPIRY_DAYS` | Days before an ad expires. | `30` |
-| `AREAS_DIR` | Root directory for area JSON files (`<AREAS_DIR>/<cc>/<state>/<slug>.json`). | `data/areas` |
-| `AREA_PAGES_INDEXING` | Kill-switch for area-page indexing. Off → all area pages `noindex,follow` and excluded from the sitemap. | `false` |
+| `AREAS_DIR` | Root directory for area JSON files (`<AREAS_DIR>/<cc>/<state>/<slug>.json`). Generated output is git-ignored. | `data/areas` |
+| `AREA_PAGES_ENABLED` | Rollout allow-list of countries or `cc:state` pairs, e.g. `au` or `au:vic,au:nsw`. Unset = no restriction. | unset |
+| `AREA_PAGES_INDEXING` | The only indexing kill-switch. Off → all area pages `noindex,follow` and excluded from the sitemap. | `false` |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile keys. Leave blank to disable. | blank |
 | `EMERGENCY_NUMBER` | Emergency number shown on the safety page. | market file |
 | `SUPPORT_URL` | Footer support link. | market file |
@@ -324,7 +400,9 @@ listnear/
 │  ├─ utils/             # helpers, url builders, JSON-LD builders
 │  └─ server.js          # App entrypoint: security, sessions, routes, maintenance
 ├─ locales/              # UI text: en.json (base) + <language>.json / en-AU.json, en-US.json overrides
-├─ data/areas/           # Area JSON, one file per suburb/town: <cc>/<state>/<slug>.json
+├─ scripts/areas/        # Server data-build job: build.js (CLI) + lib.js (pure transforms) + network.js
+├─ data/areas/           # Area JSON at runtime (git-ignored): <cc>/<state>/<slug>.json
+├─ test/fixtures/areas/  # Tests-only example areas (au/vic, au/nsw, us/ca) — never shipped
 ├─ views/                # EJS templates (partials + pages, incl. admin)
 ├─ public/               # CSS, vanilla JS, icons, manifest, service worker, uploads
 ├─ SOURCES.md            # Provenance & licences for country/region/city data
