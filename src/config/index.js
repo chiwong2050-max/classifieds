@@ -198,9 +198,16 @@ const config = {
     },
   },
 
+  // Cloudflare Turnstile. Both keys are live getters (read every access) so a
+  // test can flip the switch at runtime; in production they are fixed by the
+  // environment. When either key is empty the verification is a no-op.
   turnstile: {
-    siteKey: process.env.TURNSTILE_SITE_KEY || '',
-    secretKey: process.env.TURNSTILE_SECRET_KEY || '',
+    get siteKey() {
+      return process.env.TURNSTILE_SITE_KEY || '';
+    },
+    get secretKey() {
+      return process.env.TURNSTILE_SECRET_KEY || '';
+    },
     get enabled() {
       return Boolean(this.siteKey && this.secretKey);
     },

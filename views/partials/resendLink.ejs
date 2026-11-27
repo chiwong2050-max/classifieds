@@ -1,0 +1,15 @@
+<%#
+  One-field form to request a fresh magic link. Public form (no account), so it
+  relies on the same honeypot-free, rate-limited defences as the post form; the
+  server answers with the same neutral page either way.
+  Included from verify-sent.ejs and verify-problem.ejs with `email` (may be '').
+%>
+<form method="post" action="/post/resend" class="resend-form mt-4">
+  <label for="resend-email"><%= t('verifyResend.label') %></label>
+  <div class="row mt-2">
+    <input id="resend-email" type="email" name="contact_email" required maxlength="120"
+           value="<%= email || '' %>" placeholder="<%= t('verifyResend.placeholder') %>">
+    <button class="btn btn-outline" type="submit"><%= t('verifyResend.button') %></button>
+  </div>
+  <p class="hint"><%= t('verifyResend.hint') %></p>
+</form>

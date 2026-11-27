@@ -23,12 +23,20 @@
       <div class="alert alert-err"><strong><%= t('manage.notApproved') %></strong> <%= ad.reject_reason %></div>
     <% } %>
 
-    <form method="post" action="/manage/<%= token %>/renew">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <button class="btn btn-primary" type="submit"><%= t('manage.renewButton', { days: expiryDays }) %></button>
-    </form>
+    <% if (canRenew) { %>
+      <p class="muted small"><%= t('manage.renewHint') %></p>
+      <form method="post" action="/manage/<%= token %>/renew">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-primary" type="submit"><%= t('manage.renewButton', { days: expiryDays }) %></button>
+      </form>
+    <% } else if (ad.status === 'pending') { %>
+      <div class="alert alert-info"><%= t('manage.awaitingNote') %></div>
+    <% } else if (ad.status === 'rejected') { %>
+      <div class="alert alert-err"><%= t('manage.rejectedNote') %></div>
+    <% } %>
 
-    <p class="muted small mt-4"><%= t('manage.shareAd') %></p>
+    <p class="muted small mt-4"><%= t('manage.linkNote') %></p>
+    <p class="muted small"><%= t('manage.shareAd') %></p>
     <p class="small" style="word-break:break-all;"><%= absoluteAdLink %></p>
     <button class="btn btn-outline btn-sm" type="button" data-share data-title="<%= ad.title %>" data-url="<%= absoluteAdLink %>" data-copied-label="<%= t('js.linkCopied') %>" data-prompt-label="<%= t('js.copyLink') %>"><%= t('manage.copyShare') %></button>
   </div>

@@ -304,10 +304,18 @@ function getByManageToken(token) {
   return hydrateAd(db.prepare('SELECT * FROM ads WHERE manage_token = ?').get(token));
 }
 
-/** Renew an ad (by manage token) for another expiry window. */
+/**
+ * Renew an ad (by manage token) for another expiry window.
+ *
+ * Only ads that were already approved (active or expired) can be renewed, so a
+ * pending or rejected ad can never be pushed live by its owner - that would
+ * bypass the human review. Returns null when the token is unknown or the ad is
+ * not eligible.
+ */
 function renewAd(token) {
   const ad = getByManageToken(token);
   if (!ad) return null;
+  if (ad.status !== 'active' && ad.status !== 'expired') return null;
   const expiresAt = sqliteNowPlusDays(config.ad.expiryDays);
   db.prepare(`
     UPDATE ads
@@ -375,6 +383,44 @@ function consumeVerificationToken(token) {
   return { ...row, payload: safeJson(row.payload, null) };
 }
 
+/**
+ * Read a token row without consuming it. Used to give a kind, specific error
+ * (and a resend form) when a verification link is unknown, expired or used.
+ * @returns {object|null} { email, used_at, expires_at, expired, payload }
+ */
+function getVerificationToken(token) {
+  const row = db.prepare('SELECT * FROM verification_tokens WHERE token = ?').get(token);
+  if (!row) return null;
+  return {
+    ...row,
+    payload: safeJson(row.payload, null),
+    expired: !row.used_at && row.expires_at < sqliteNow(),
+    used: Boolean(row.used_at),
+  };
+}
+
+/**
+ * The most recent verification token for an email that has not been used yet,
+ * even if it has already expired. Resending re-issues from this row's payload,
+ * so an expired (but unused) link can be refreshed without re-posting.
+ */
+function latestPendingVerificationToken(email) {
+  const row = db
+    .prepare(
+      `SELECT * FROM verification_tokens
+       WHERE lower(email) = ? AND used_at IS NULL
+       ORDER BY id DESC LIMIT 1`
+    )
+    .get(String(email || '').trim().toLowerCase());
+  if (!row) return null;
+  return { ...row, payload: safeJson(row.payload, null) };
+}
+
+/** Mark a token used so it can never create a second ad (used on resend). */
+function invalidateVerificationToken(id) {
+  db.prepare('UPDATE verification_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL').run(sqliteNow(), id);
+}
+
 function pruneExpiredTokens() {
   db.prepare("DELETE FROM verification_tokens WHERE expires_at < datetime('now', '-1 day')").run();
 }
@@ -432,6 +478,9 @@ module.exports = {
   createContactMessage,
   createVerificationToken,
   consumeVerificationToken,
+  getVerificationToken,
+  latestPendingVerificationToken,
+  invalidateVerificationToken,
   pruneExpiredTokens,
   allActiveForSitemap,
   distinctActiveLocations,

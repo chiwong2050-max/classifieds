@@ -2,13 +2,18 @@
 <div class="container mt-6">
   <div class="card card-pad prose" style="max-width:60ch;margin:0 auto;">
     <h1><%= t('verifySent.title') %></h1>
-    <% if (!honeypotDropped) { %>
+    <% if (typeof resent !== 'undefined' && resent) { %>
+      <p><%= t('verifySent.resentBody', { email: submittedEmail }) %></p>
+    <% } else if (!honeypotDropped) { %>
       <p><%= t('verifySent.sentTo', { email: submittedEmail }) %></p>
       <p class="muted"><%= t('verifySent.clickLink') %></p>
     <% } else { %>
       <p class="muted"><%= t('verifySent.honeypot') %></p>
     <% } %>
     <p class="muted small"><%= t('verifySent.notReceived') %></p>
+    <% if (!honeypotDropped) { %>
+      <%- include('../partials/resendLink', { email: submittedEmail }) %>
+    <% } %>
   </div>
 </div>
 <%- include('../partials/foot') %>

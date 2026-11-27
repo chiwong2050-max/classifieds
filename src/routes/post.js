@@ -9,7 +9,7 @@ const { processUploads } = require('../services/images');
 const { moderateAd } = require('../services/moderation');
 const mailer = require('../services/mailer');
 const { upload } = require('../middleware/upload');
-const { postLimiter } = require('../middleware/rateLimit');
+const { postLimiter, actionLimiter } = require('../middleware/rateLimit');
 const { turnstileMiddleware } = require('../middleware/turnstile');
 const { t } = require('../config/i18n');
 
@@ -150,6 +150,7 @@ module.exports = function postRoutes(app) {
             robots: 'noindex,nofollow',
             submittedEmail: String(body.contact_email || '').trim(),
             honeypotDropped: true,
+            resent: false,
           });
         }
 
@@ -171,12 +172,39 @@ module.exports = function postRoutes(app) {
         const attrs = collectAttrs(body);
         const moderation = moderateAd({ title: values.title, description: values.description, category: values.category });
 
-        const images = await processUploads(req.files || []);
+        // Re-check the resolved location. A city that passed validation must
+        // resolve; if it somehow does not, re-render the form kindly instead of
+        // throwing (which would surface as a 500).
+        const place = resolveCity(values.country, values.state, values.city, values.cityOther);
+        if (!place) {
+          return res.status(400).render('pages/post', {
+            title: t('post.title'),
+            robots: 'noindex,follow',
+            canonical: `${config.site.url}/post/`,
+            errors: { city: t('post.errorCity') },
+            values: { ...values, ...body, images: req.files },
+            preselect: { country: values.country, state: values.state, city: values.city, category: values.category },
+          });
+        }
+
+        // Image processing can fail on a corrupt upload; show a plain error on
+        // the form rather than a 500.
+        let images = [];
+        try {
+          images = await processUploads(req.files || []);
+        } catch {
+          return res.status(400).render('pages/post', {
+            title: t('post.title'),
+            robots: 'noindex,follow',
+            canonical: `${config.site.url}/post/`,
+            errors: { images: t('post.errorImages') },
+            values: { ...values, ...body },
+            preselect: { country: values.country, state: values.state, city: values.city, category: values.category },
+          });
+        }
 
         const slugBase = slugify(values.title) || 'ad';
         const slug = `${slugBase.slice(0, 60)}-${shortId(4)}`;
-
-        const place = resolveCity(values.country, values.state, values.city, values.cityOther);
 
         const payload = {
           ad: {
@@ -215,6 +243,7 @@ module.exports = function postRoutes(app) {
           // Real submissions must pass this so verify-sent.ejs does not throw.
           // The honeypot path above sets it to true.
           honeypotDropped: false,
+          resent: false,
         });
       } catch (err) {
         return next(err);
@@ -222,15 +251,71 @@ module.exports = function postRoutes(app) {
     }
   );
 
+  // --- Verification problems -------------------------------------------------
+  // A magic link can be unknown, expired or already used. In every case show a
+  // plain, kind page (never a 500 or a blank screen) that, whenever we know the
+  // address, offers a one-field form to have a fresh link emailed.
+  function renderVerifyProblem(res, { email = '', reason } = {}) {
+    return res.status(400).render('pages/verify-problem', {
+      title: t('verifyProblem.title'),
+      metaDescription: t('verifyProblem.metaDescription'),
+      robots: 'noindex,nofollow',
+      email,
+      reason: reason || t('verifyProblem.body'),
+    });
+  }
+
+  // --- Fresh magic link ------------------------------------------------------
+  // Re-issues a link from the payload of the newest *unused* token for that
+  // address, so an expired (but unused) link can be refreshed without re-posting.
+  // The answer is always the same neutral page, so it cannot be used to probe
+  // which addresses have a pending ad. The old token is invalidated first, so a
+  // resend can never end up creating two ads.
+  app.post('/post/resend', actionLimiter, async (req, res, next) => {
+    try {
+      const email = String((req.body || {}).contact_email || '').trim();
+      if (!EMAIL_RE.test(email)) {
+        return renderVerifyProblem(res, { email, reason: t('verifyProblem.badEmail') });
+      }
+
+      const pending = ads.latestPendingVerificationToken(email);
+      if (pending && pending.payload && pending.payload.ad) {
+        ads.invalidateVerificationToken(pending.id);
+        const token = ads.createVerificationToken({ email, payload: pending.payload });
+        await mailer.sendMagicLink({ to: email, verifyUrl: `${config.site.url}/verify/${token}` });
+      }
+
+      return res.render('pages/verify-sent', {
+        title: t('verifySent.title'),
+        metaDescription: t('verifySent.metaDescription'),
+        robots: 'noindex,nofollow',
+        submittedEmail: email,
+        honeypotDropped: false,
+        resent: true,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
   // --- Magic-link verification ---------------------------------------------
   app.get('/verify/:token', (req, res) => {
-    const record = ads.consumeVerificationToken(req.params.token);
-    if (!record || !record.payload) {
-      return res.status(400).render('pages/error', {
-        title: t('error.linkExpiredTitle'),
-        status: 400,
-        message: t('error.linkExpiredBody'),
+    // Inspect before consuming so we can tell the user *why* a link failed and
+    // offer a fresh one - and so a payload we cannot use never half-consumes.
+    const known = ads.getVerificationToken(req.params.token);
+    if (!known) {
+      return renderVerifyProblem(res, { reason: t('verifyProblem.unknown') });
+    }
+    if (known.used || known.expired) {
+      return renderVerifyProblem(res, {
+        email: known.email,
+        reason: known.used ? t('verifyProblem.used') : t('verifyProblem.expired'),
       });
+    }
+
+    const record = ads.consumeVerificationToken(req.params.token);
+    if (!record || !record.payload || !record.payload.ad) {
+      return renderVerifyProblem(res, { email: known.email, reason: t('verifyProblem.unknown') });
     }
 
     const { ad, images = [] } = record.payload;

@@ -323,8 +323,26 @@
     "metaDescription": "Verify your email to publish your ad.",
     "sentTo": "We've sent a verification link to {email}.",
     "clickLink": "Click the link in that email to submit your ad for review. The link expires in 60 minutes.",
+    "resentBody": "If you have a pending ad for {email}, we've just sent a fresh verification link. It expires in 60 minutes.",
     "honeypot": "If an email is registered, a verification link is on its way.",
-    "notReceived": "Didn't get it? Check your spam folder, or wait a minute and try again."
+    "notReceived": "Didn't get it? Check your spam folder, or request a new link below."
+  },
+  "verifyResend": {
+    "label": "Email address",
+    "placeholder": "you@example.com",
+    "button": "Email me a new link",
+    "hint": "We'll send a fresh verification link if you have a pending ad. Nothing is sent otherwise."
+  },
+  "verifyProblem": {
+    "title": "We couldn't open that link",
+    "metaDescription": "That verification link could not be used.",
+    "body": "This verification link is not valid.",
+    "unknown": "We don't recognise this verification link. It may have been copied incompletely, or it may have been deleted.",
+    "expired": "This verification link has expired - links are valid for 60 minutes.",
+    "used": "This verification link has already been used, so your ad has been submitted. Use the manage link in your email to view or renew it.",
+    "badEmail": "That doesn't look like a valid email address. Please check it and try again.",
+    "postAgain": "You can also post your ad again to get a new link.",
+    "postAgainBtn": "Post your ad again"
   },
   "manage": {
     "title": "Manage your ad",
@@ -339,6 +357,10 @@
     "viewLive": "View your live ad",
     "notApproved": "Not approved:",
     "renewButton": "Renew for another {days} days",
+    "renewHint": "Renewing keeps your ad visible for another {days} days. There is no charge.",
+    "awaitingNote": "This ad is still waiting for review. You'll be able to renew it once it's approved.",
+    "rejectedNote": "This ad was not approved, so it can't be renewed. You're welcome to post a new ad.",
+    "linkNote": "Keep this link private - anyone with it can renew your ad. If it stops working, check the latest email we sent you or post your ad again for a fresh link.",
     "shareAd": "Share your ad:",
     "copyShare": "Copy / share link",
     "notFoundTitle": "Link not found",

@@ -1,0 +1,14 @@
+<%- include('../partials/head') %>
+<div class="container mt-6">
+  <div class="card card-pad prose" style="max-width:60ch;margin:0 auto;">
+    <h1><%= t('verifyProblem.title') %></h1>
+    <p class="muted"><%= reason %></p>
+    <p><%= t('verifyProblem.postAgain') %></p>
+    <div class="row">
+      <a class="btn btn-primary" href="/post/"><%= t('verifyProblem.postAgainBtn') %></a>
+      <a class="btn btn-outline" href="/"><%= t('error.goHome') %></a>
+    </div>
+    <%- include('../partials/resendLink', { email: email }) %>
+  </div>
+</div>
+<%- include('../partials/foot') %>

@@ -18,6 +18,10 @@ module.exports = function manageRoutes(app) {
       });
     }
 
+    // Only a previously approved ad (active or expired) may be renewed; the
+    // view explains why for pending or rejected ads (see pages/manage.ejs).
+    const canRenew = ad.status === 'active' || ad.status === 'expired';
+
     res.render('pages/manage', {
       title: t('manage.title'),
       metaDescription: t('manage.metaDescription'),
@@ -25,6 +29,7 @@ module.exports = function manageRoutes(app) {
       robots: 'noindex,nofollow',
       ad,
       token: req.params.token,
+      canRenew,
       adLink: adUrl(ad),
       absoluteAdLink: absolute(adUrl(ad)),
       renewed: req.query.renewed === 'ok',
@@ -33,14 +38,19 @@ module.exports = function manageRoutes(app) {
 
   // --- Renew -----------------------------------------------------------------
   app.post('/manage/:token/renew', requireCsrf, (req, res) => {
-    const renewed = ads.renewAd(req.params.token);
-    if (!renewed) {
+    const ad = ads.getByManageToken(req.params.token);
+    if (!ad) {
       return res.status(404).render('pages/error', {
         title: t('manage.notFoundTitle'),
         status: 404,
         message: t('manage.invalidBody'),
       });
     }
+    // renewAd refuses pending/rejected ads, so an owner can never publish an ad
+    // that has not been approved. When it declines, the manage page re-explains
+    // rather than showing a bare error.
+    const renewed = ads.renewAd(req.params.token);
+    if (!renewed) return res.redirect(`/manage/${req.params.token}`);
     return res.redirect(`/manage/${req.params.token}?renewed=ok`);
   });
 };
