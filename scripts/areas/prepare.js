@@ -27,9 +27,21 @@
  *     file or an unnamed place is skipped with a log line.
  *   - No Overpass. OSM is read by clipping the local extract with `osmium`.
  *
+ * Scale rule (learned from the real data host):
+ *   - The live caches carry NO header row. Each *known* cache therefore has a
+ *     built-in column map (overridable with `--<role>-cols` or `AREA_*_COLS`);
+ *     header detection is only a fallback for an *unknown* file.
+ *   - `--country` / `--state` / `--limit` are applied to the place list FIRST;
+ *     the heavy cache is only ever looked up for the places left in scope.
+ *   - The Wikipedia/Commons cache (`wd.sqlite`, ~1.2 GB) is NEVER full-scanned:
+ *     rows are fetched by title (and photos joined by file), the `it` table is
+ *     skipped by default, and a `--max-seconds` budget stops a runaway run.
+ *   - If the place list cannot be read the run fails with a clear error rather
+ *     than falling back to walking the whole cache.
+ *
  * Usage:
- *   node scripts/areas/prepare.js --country au --state vic
- *   node scripts/areas/prepare.js --country us --state ca --limit 20 --dry-run
+ *   node scripts/areas/prepare.js --country au --state vic --limit 8 --dry-run
+ *   node scripts/areas/prepare.js --country us --state ca --limit 20
  *
  * Operator wrap (low impact; do not schedule at 03:00 or ~01:30 AU/Melbourne):
  *   nice -n 19 ionice -c idle node scripts/areas/prepare.js --country au --state nsw
@@ -40,15 +52,21 @@
  *   --out <dir>           sources tree to write      (default data/areas-src)
  *   --limit <n>           cap the number of places    (trials)
  *   --dry-run             compute + log, write nothing
+ *   --max-seconds <n>     hard time budget            (default 300)
  *   --allow-network       last-resort rate-limited Wikipedia fill (off)
  *   --cache <dir>         network cache               (default .cache/areas)
  *   --suburbs <file>      locality/postcode CSV       (AU default /root/ap_suburbs.csv)
+ *   --suburbs-cols <list> column order for that file  (default name,state,postcode,lat,lon)
  *   --towns <file>        town coordinates TSV        (default /root/as-wiki/towns.tsv)
+ *   --towns-cols <list>   column order for that file  (default id,name,state,lat,lon)
  *   --places <file>       place-name TSV              (default /root/aw-wiki/places.tsv)
+ *   --places-cols <list>  column order for that file  (default name; type defaults to "place")
  *   --wiki-db <file>      Wikipedia/Commons SQLite    (default /root/aw-wiki/wd.sqlite)
- *   --wiki-tables <list>  cache tables to read        (default en,it,ph)
+ *   --wiki-tables <list>  cache tables to read        (default en,ph - "it" is skipped)
  *   --osm-file <pbf>      OSM extract                 (AU: AU.pbf, US: US.pbf)
  *   --directories <list>  directory sources (csv/tsv/json/sqlite), comma-separated
+ *   --listings-env <file> env file holding the listings MySQL DSN (optional)
+ *   --listings-table <t>  listings table name         (default listings)
  *   --census <file>       local attributed census file (US population only)
  *   --help                show this message
  *
@@ -75,14 +93,43 @@ const DEFAULTS = {
   cache: '.cache/areas',
   placesLimit: 12,
   poiRadiusKm: 15,
+  maxSeconds: 300,
+  progressEvery: 10000,
 };
 
 /** Caches that live on the data host and are not country-specific. */
 const HOST = {
   wikiDb: '/root/aw-wiki/wd.sqlite',
-  wikiTables: 'en,it,ph',
+  // `it` (other languages, ~12.2M rows) is deliberately excluded by default.
+  wikiTables: 'en,ph',
   towns: '/root/as-wiki/towns.tsv',
   places: '/root/aw-wiki/places.tsv',
+};
+
+/**
+ * Built-in column maps for the *known* header-less caches, keyed by file name.
+ * The live files carry NO header row, so their column *order* must be supplied;
+ * `--<role>-cols` (or the matching `AREAS_*_COLS` env) overrides it. Any *other*
+ * file falls back to header detection (the "unknown file" path).
+ *
+ * `towns.tsv` keeps a leading `id` only so `name`/`state` land on the right
+ * columns - it is positional filler, never the slug (the slug is the name).
+ */
+const KNOWN_CACHE_COLS = {
+  'ap_suburbs.csv': 'name,state,postcode,lat,lon',
+  'towns.tsv': 'id,name,state,lat,lon',
+  'places.tsv': 'name',
+};
+
+/**
+ * Known column names inside the Wikipedia/Commons cache. Each field is only
+ * used when that column actually exists in the table, otherwise detection runs
+ * - so both the real schema (`en(title,ex,pop,py,img)`, `ph(file,data)`) and
+ * the tiny test stand-in are read correctly.
+ */
+const WIKI_TABLE_COLS = {
+  en: { title: 'title', extract: 'ex', popValue: 'pop', popYear: 'py', file: 'img' },
+  ph: { file: 'file', licence: 'data' },
 };
 
 /** Per-country defaults (all overridable with flags). */
@@ -90,12 +137,15 @@ const COUNTRIES = {
   au: {
     suburbs: '/root/ap_suburbs.csv',
     osm: '/root/geofabrik/pbf/AU.pbf',
-    directories: ['/root/australiaweb', '/root/localaus', '/root/eatzap', '/root/findacarer'],
+    // The old `/root/<app>` directory paths do not exist (the directory sites
+    // are WordPress/MySQL). Listings now come from an optional MySQL source
+    // (`--listings-env`) and are skipped, with a log line, when none is given.
+    directories: [],
   },
   us: {
     suburbs: null,
     osm: '/root/geofabrik/pbf/US.pbf',
-    directories: ['/root/localusa', '/root/eatzap'],
+    directories: [],
   },
 };
 
@@ -190,6 +240,85 @@ function toTsv(header, rows) {
 
 const isTableName = (name) => /^[A-Za-z0-9_]+$/.test(String(name || ''));
 
+/** Quote an SQL identifier (table/column) safely; names come from our own maps. */
+const quoteIdent = (name) => `"${String(name).replace(/"/g, '""')}"`;
+
+// --- Known column maps (header-less caches) --------------------------------
+
+/**
+ * Decide how to read a delimited cache.
+ *
+ * A *known* cache (matched by file name) has a built-in column order because
+ * the live files carry no header row; an explicit `--<role>-cols` override
+ * always wins, and anything else falls back to header detection.
+ *
+ * @returns {{headerless: boolean, cols: string|null}}
+ */
+function resolveColumns({ file, explicit } = {}) {
+  if (explicit) return { headerless: true, cols: String(explicit) };
+  const base = file ? path.basename(file).toLowerCase() : '';
+  if (KNOWN_CACHE_COLS[base]) return { headerless: true, cols: KNOWN_CACHE_COLS[base] };
+  return { headerless: false, cols: null };
+}
+
+/** Lower-cased logical column names from a `--<role>-cols` value. */
+const logicalNames = (cols) =>
+  (Array.isArray(cols) ? cols : String(cols || '').split(','))
+    .map((c) => String(c).trim().toLowerCase())
+    .filter(Boolean);
+
+/** First alias present (exact, case-insensitive) in a header-less column list. */
+function exactField(columns, aliases) {
+  const lower = (columns || []).map((c) => String(c).toLowerCase());
+  for (const alias of aliases) {
+    const i = lower.indexOf(alias);
+    if (i !== -1) return columns[i];
+  }
+  return null;
+}
+
+/** Read a delimited file honouring the resolved column map. */
+function readTable(file, { delim, headerless, cols } = {}) {
+  const text = readText(file);
+  if (text === null) return null;
+  if (headerless) return lib.parsePositional(text, delim, cols);
+  return parseRecords(text, delim);
+}
+
+// --- Time budget -----------------------------------------------------------
+
+/**
+ * A hard wall-clock budget. Big loops call `guard()` every few thousand rows;
+ * when the budget is spent it throws, so a run on the live data host can never
+ * spend a long time silently. Nothing is written until the very end, so an
+ * aborted run leaves no partial output.
+ */
+class TimeBudgetError extends Error {
+  constructor(seconds) {
+    super(`time budget of ${seconds}s reached; stopping`);
+    this.name = 'TimeBudgetError';
+  }
+}
+
+class Deadline {
+  constructor(maxSeconds) {
+    this.maxSeconds = Number(maxSeconds) > 0 ? Number(maxSeconds) : 0;
+    this.start = Date.now();
+  }
+
+  get elapsedMs() {
+    return Date.now() - this.start;
+  }
+
+  get expired() {
+    return this.maxSeconds > 0 && this.elapsedMs > this.maxSeconds * 1000;
+  }
+
+  guard() {
+    if (this.expired) throw new TimeBudgetError(this.maxSeconds);
+  }
+}
+
 // --- Argument parsing / help ----------------------------------------------
 
 function parseArgs(argv) {
@@ -229,15 +358,21 @@ function printHelp() {
       `  --out <dir>           sources tree        (default ${DEFAULTS.out})`,
       '  --limit <n>           cap the number of places (trials)',
       '  --dry-run             compute + log, write nothing',
+      `  --max-seconds <n>     hard time budget    (default ${DEFAULTS.maxSeconds})`,
       '  --allow-network       last-resort rate-limited Wikipedia fill (off)',
       `  --cache <dir>         network cache       (default ${DEFAULTS.cache})`,
-      '  --suburbs <file>      locality/postcode CSV  (AU: /root/ap_suburbs.csv)',
-      `  --towns <file>        town coordinates TSV   (default ${HOST.towns})`,
-      `  --places <file>       place-name TSV         (default ${HOST.places})`,
-      `  --wiki-db <file>      Wikipedia SQLite cache (default ${HOST.wikiDb})`,
-      `  --wiki-tables <list>  cache tables to read   (default ${HOST.wikiTables})`,
+      '  --suburbs <file>      locality CSV (no header)  (AU: /root/ap_suburbs.csv)',
+      `  --suburbs-cols <list> column order            (default ${KNOWN_CACHE_COLS['ap_suburbs.csv']})`,
+      `  --towns <file>        town TSV (no header)      (default ${HOST.towns})`,
+      `  --towns-cols <list>   column order            (default ${KNOWN_CACHE_COLS['towns.tsv']})`,
+      `  --places <file>       place-name TSV (no header)(default ${HOST.places})`,
+      `  --places-cols <list>  column order            (default ${KNOWN_CACHE_COLS['places.tsv']}; type=place)`,
+      `  --wiki-db <file>      Wikipedia SQLite cache   (default ${HOST.wikiDb})`,
+      `  --wiki-tables <list>  cache tables to read     (default ${HOST.wikiTables})`,
       '  --osm-file <pbf>      OSM extract (AU: AU.pbf, US: US.pbf)',
       '  --directories <list>  directory sources, comma-separated',
+      '  --listings-env <file> env file holding the listings MySQL DSN',
+      '  --listings-table <t>  listings table name    (default listings)',
       '  --census <file>       local attributed census file (US population)',
       '  --help                show this message',
       '',
@@ -264,32 +399,55 @@ function applyLowPriority() {
 
 // --- Place list (areas.csv source) -----------------------------------------
 
-/** Locality CSV/TSV (`--suburbs`) -> place rows (names + postcodes only). */
-function readSuburbs(file, { country, state, columns } = {}) {
-  const text = readText(file);
-  if (text === null) {
-    log(`suburbs: ${file} not found; skipping`);
-    return [];
+/**
+ * Locality CSV/TSV (`--suburbs`) -> place rows.
+ *
+ * The live `/root/ap_suburbs.csv` has NO header: its column order comes from
+ * `--suburbs-cols` (default `name,state,postcode,lat,lon`). Only an unknown
+ * file falls back to header detection. If the file cannot be read this throws -
+ * we must never silently fall back to walking the whole wiki cache.
+ */
+function readSuburbs(file, { country, state, cols, deadline, progressEvery = DEFAULTS.progressEvery } = {}) {
+  const { headerless, cols: resolved } = resolveColumns({ file, explicit: cols });
+  const rows = readTable(file, { delim: delimFor(file), headerless, cols: resolved });
+  if (rows === null) {
+    throw new Error(`suburbs file not found: ${file} (refusing to fall back to the wiki cache)`);
   }
-  const rows = parseRecords(text, delimFor(file));
-  if (!rows.length) return [];
-  const cols = Object.keys(rows[0]);
-  const map = columns || {
-    name: detectColumn(cols, COLS.name),
-    postcode: detectColumn(cols, COLS.postcode),
-    state: detectColumn(cols, COLS.state),
-    lga: detectColumn(cols, COLS.lga),
-    county: detectColumn(cols, COLS.county),
-  };
-  if (!map.name) {
-    log(`suburbs: no name column in ${file} (saw: ${cols.join(', ')}); skipping`);
-    return [];
+  if (!rows.length) {
+    throw new Error(`suburbs file has no data rows: ${file}`);
   }
-  log(`suburbs: name="${map.name}" state=${map.state || '-'} postcode=${map.postcode || '-'} lga=${map.lga || '-'}`);
+  const columns = headerless ? logicalNames(resolved) : Object.keys(rows[0]);
+  // A header-less file maps its logical names exactly; a headered one is
+  // detected by name (with aliases) as before.
+  const map = headerless
+    ? {
+        name: exactField(columns, COLS.name),
+        postcode: exactField(columns, COLS.postcode),
+        state: exactField(columns, COLS.state),
+        lga: exactField(columns, COLS.lga),
+        county: exactField(columns, COLS.county),
+      }
+    : {
+        name: detectColumn(columns, COLS.name),
+        postcode: detectColumn(columns, COLS.postcode),
+        state: detectColumn(columns, COLS.state),
+        lga: detectColumn(columns, COLS.lga),
+        county: detectColumn(columns, COLS.county),
+      };
+  if (!map.name || !columns.includes(map.name)) {
+    throw new Error(`suburbs file has no name column: ${file} (saw: ${columns.join(', ')})`);
+  }
+  log(`suburbs: ${headerless ? `positional [${columns.join(', ')}]` : 'header-detected'} name="${map.name}" state=${map.state || '-'} postcode=${map.postcode || '-'}`);
 
   const wanted = state ? String(state).toLowerCase() : null;
   const out = [];
+  let seen = 0;
   for (const r of rows) {
+    seen += 1;
+    if (seen % progressEvery === 0) {
+      log(`suburbs: read ${seen.toLocaleString()} row(s)`);
+      if (deadline) deadline.guard();
+    }
     const name = String(pick(r, map.name) || '').trim();
     if (!name) continue;
     const rowState = map.state ? String(pick(r, map.state) || '').trim().toLowerCase() : wanted || '';
@@ -305,6 +463,8 @@ function readSuburbs(file, { country, state, columns } = {}) {
       postcode: map.postcode ? String(pick(r, map.postcode) || '').trim() : '',
     });
   }
+  if (deadline) deadline.guard();
+  if (!out.length && wanted) log(`suburbs: no rows matched state=${wanted}`);
   return dedupePlaces(out);
 }
 
@@ -327,31 +487,43 @@ function dedupePlaces(rows) {
 
 // --- Wikipedia / Commons SQLite cache --------------------------------------
 
-function wikiColumns(cols) {
-  const map = {
-    slug: detectColumn(cols, COLS.slug),
-    name: detectColumn(cols, COLS.name),
-    title: detectColumn(cols, COLS.title),
-    extract: detectColumn(cols, COLS.extract),
-    url: detectColumn(cols, COLS.wikiUrl),
-    file: detectColumn(cols, COLS.file),
-    author: detectColumn(cols, COLS.author),
-    licence: detectColumn(cols, COLS.licence),
-    lat: detectColumn(cols, COLS.lat),
-    lon: detectColumn(cols, COLS.lon),
-    popValue: detectColumn(cols, COLS.popValue),
-    popYear: detectColumn(cols, COLS.popYear),
-    popSource: detectColumn(cols, COLS.popSource),
-    popSourceUrl: detectColumn(cols, COLS.popSourceUrl),
+/**
+ * Column map for a wiki cache table. Each field prefers the *known* column name
+ * for that table (the real schema) but only when it exists, otherwise it falls
+ * back to name detection. This reads both the real `wd.sqlite`
+ * (`en(title,ex,pop,py,img)`, `ph(file,data)`) and the tiny test stand-in.
+ */
+function wikiColumns(cols, table) {
+  const known = WIKI_TABLE_COLS[table] || {};
+  const pickCol = (field, aliases) =>
+    known[field] && cols.includes(known[field]) ? known[field] : detectColumn(cols, aliases);
+  return {
+    slug: pickCol('slug', COLS.slug),
+    name: pickCol('name', COLS.name),
+    title: pickCol('title', COLS.title),
+    extract: pickCol('extract', COLS.extract),
+    url: pickCol('url', COLS.wikiUrl),
+    file: pickCol('file', COLS.file),
+    author: pickCol('author', COLS.author),
+    licence: pickCol('licence', COLS.licence),
+    lat: pickCol('lat', COLS.lat),
+    lon: pickCol('lon', COLS.lon),
+    popValue: pickCol('popValue', COLS.popValue),
+    popYear: pickCol('popYear', COLS.popYear),
+    popSource: pickCol('popSource', COLS.popSource),
+    popSourceUrl: pickCol('popSourceUrl', COLS.popSourceUrl),
   };
-  return map;
 }
 
 /**
  * Map one cache row to `{ wiki, lat, lon }`. Only real values are kept; a
  * missing column simply leaves the field out (never guessed).
+ *
+ * `defaultPopSource` gives the population a named origin when the cache has no
+ * source column of its own (the real `en` table): it is Wikipedia data, so it
+ * is attributed to Wikipedia rather than left unattributed.
  */
-function wikiFromRow(row, map) {
+function wikiFromRow(row, map, { defaultPopSource = null } = {}) {
   const out = {};
   const str = (col) => {
     const v = pick(row, col);
@@ -373,7 +545,7 @@ function wikiFromRow(row, map) {
   }
   const value = Number(str(map.popValue));
   const year = Number(str(map.popYear));
-  const source = str(map.popSource);
+  const source = str(map.popSource) || defaultPopSource;
   // A population needs a real value, a year AND a named source.
   if (Number.isFinite(value) && value > 0 && Number.isFinite(year) && year > 0 && source) {
     out.population = { value, year, source, sourceUrl: str(map.popSourceUrl) || null };
@@ -387,129 +559,201 @@ function wikiFromRow(row, map) {
   };
 }
 
+/** Escape LIKE wildcards so a place name is matched literally. */
+const escapeLike = (value) => String(value).replace(/[\\%_]/g, (c) => `\\${c}`);
+
 /**
- * Read the Wikipedia/Commons SQLite cache. Tables/flags are introspected with
- * `PRAGMA table_info` and rows are matched to our place slugs (exact slug, or a
- * title-style prefix when the cache keys by page title). Missing tables/files
- * are skipped, never fatal.
- *
- * When no place list is supplied, the cache doubles as the place list: every
- * named row becomes a place (keyed by its slug column, else its slugified
- * name), which is how a US state can be wired without a locality CSV.
- * @returns {{ wiki: object, coords: Map<string,{lat:number,lon:number}>, places: Array }}
+ * Fetch the single cache row for one place. A cache keyed by slug (or an
+ * explicit `--wiki-slug-column`) matches exactly; one keyed by page title
+ * matches exactly first, then by a strict `"<name>,"` prefix (so
+ * "Newcastle" finds "Newcastle, New South Wales"). Never scans the table.
  */
-function readWikiDb(file, { tables, entries, slugColumn } = {}) {
+function lookupWikiRow(db, spec, entry) {
+  const { table, map, keyCol, exactOnly } = spec;
+  const keyVal = exactOnly ? entry.slug : entry.name;
+  if (!keyVal) return null;
+  const qualified = `${quoteIdent(table)}.${quoteIdent(keyCol)}`;
+  const read = (sql, params) => {
+    try {
+      return db.prepare(sql).get(...params) || null;
+    } catch (err) {
+      log(`wiki[${table}]: lookup failed (${err.message})`);
+      return null;
+    }
+  };
+  let row = read(`SELECT * FROM ${quoteIdent(table)} WHERE ${qualified} = ? COLLATE NOCASE LIMIT 1`, [keyVal]);
+  if (row) return row;
+  if (exactOnly) return null;
+  const like = `${escapeLike(keyVal)},%`;
+  row = read(`SELECT * FROM ${quoteIdent(table)} WHERE ${qualified} LIKE ? ESCAPE '\\' LIMIT 1`, [like]);
+  return row || null;
+}
+
+/**
+ * Read the Wikipedia/Commons SQLite cache for the places *in scope only*.
+ *
+ * The cache is ~1.2 GB (the `it` table alone is ~12.2M rows) so it is NEVER
+ * scanned end to end: each table is introspected once, then a single indexed
+ * lookup is made per place (by slug or page title), and photo rows are joined
+ * by file name. Tables/files that are missing are skipped, never fatal.
+ *
+ * @returns {{ wiki: object, coords: Map<string,{lat:number,lon:number}> }}
+ */
+function readWikiDb(file, { tables, entries, slugColumn, deadline, progressEvery = DEFAULTS.progressEvery } = {}) {
   const wiki = {};
   const coords = new Map();
-  const places = [];
   if (!file || !fs.existsSync(file)) {
     log(`wiki: ${file || '(unset)'} not found; skipping`);
-    return { wiki, coords, places };
+    return { wiki, coords };
+  }
+  const inScope = entries && entries.length ? entries : [];
+  if (!inScope.length) {
+    log('wiki: no places in scope; skipping lookups');
+    return { wiki, coords };
   }
   let db;
   try {
     db = new Database(file, { readonly: true, fileMustExist: true });
   } catch (err) {
     log(`wiki: cannot open ${file}: ${err.message}; skipping`);
-    return { wiki, coords, places };
+    return { wiki, coords };
   }
   try {
     const present = new Set(
       db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view')").all().map((r) => r.name)
     );
+    const missing = (tables || []).filter((t) => isTableName(t) && !present.has(t));
+    if (missing.length) log(`wiki: table(s) not present: ${missing.join(', ')}`);
     const wanted = (tables || []).filter((t) => isTableName(t) && present.has(t));
-    if (!wanted.length) log(`wiki: none of [${(tables || []).join(', ')}] present in ${file}`);
+    if (!wanted.length) {
+      log(`wiki: none of [${(tables || []).join(', ')}] present in ${file}; skipping`);
+      return { wiki, coords };
+    }
 
-    const haveEntries = Boolean(entries && entries.length);
-    const slugSet = new Set(haveEntries ? entries.map((e) => e.slug) : []);
-    const byLen = [...slugSet].sort((a, b) => b.length - a.length);
+    // Introspect each table once and classify it.
+    const specs = wanted.map((table) => {
+      const cols = db.prepare(`PRAGMA table_info(${quoteIdent(table)})`).all().map((c) => c.name);
+      const map = wikiColumns(cols, table);
+      const keyCol = map.slug || slugColumn || map.title || map.name;
+      // A table with only a file key (the real `ph`) is joined by file name.
+      const fileKeyed = !keyCol && Boolean(map.file);
+      if (fileKeyed) {
+        log(`wiki[${table}]: photo table keyed by "${map.file}"`);
+      } else {
+        log(
+          `wiki[${table}]: key="${keyCol || '-'}" extract=${map.extract || '-'}` +
+            ` file=${map.file || '-'} population=${map.popValue || '-'}`
+        );
+      }
+      return { table, map, keyCol, fileKeyed, exactOnly: Boolean(map.slug || slugColumn) };
+    });
+    const primary = specs.filter((s) => !s.fileKeyed);
+    const photoTables = specs.filter((s) => s.fileKeyed);
 
-    for (const table of wanted) {
-      const cols = db
-        .prepare(`PRAGMA table_info("${table}")`)
-        .all()
-        .map((c) => c.name);
-      const map = wikiColumns(cols);
-      // A cache that keys by title (not slug) may use "Newcastle, New South
-      // Wales"; allow a strict prefix match in that case only.
-      const keyCol = map.slug || slugColumn || map.name || map.title;
-      const exactOnly = Boolean(map.slug || slugColumn);
-      const nameCol = map.name || map.title || map.slug;
-      const stateCol = detectColumn(cols, COLS.state);
-      const countryCol = detectColumn(cols, COLS.country);
-      log(`wiki[${table}]: key="${keyCol || '-'}" extract=${map.extract || '-'} file=${map.file || '-'} population=${map.popValue || '-'}`);
+    let matched = 0;
+    let seen = 0;
+    for (const entry of inScope) {
+      seen += 1;
+      if (seen % progressEvery === 0) {
+        log(`wiki: looked up ${seen.toLocaleString()} place(s)`);
+        if (deadline) deadline.guard();
+      }
+      if (deadline) deadline.guard();
 
-      let matched = 0;
-      let seen = 0;
-      for (const row of db.prepare(`SELECT * FROM "${table}"`).iterate()) {
-        const rawKey = pick(row, keyCol);
-        const key = rawKey === undefined || rawKey === null ? '' : String(rawKey).trim().toLowerCase();
-        if (!key) continue;
-        seen += 1;
-        const slug = haveEntries
-          ? matchSlug(key, slugSet, byLen, exactOnly)
-          : exactOnly
-            ? key
-            : lib.slugify(pick(row, nameCol) || key);
-        if (!slug) continue;
-        const { wiki: entry, lat, lon } = wikiFromRow(row, map);
-        if (Object.keys(entry).length) wiki[slug] = { ...(wiki[slug] || {}), ...entry };
-        if (lat !== null && lon !== null && !coords.has(slug)) coords.set(slug, { lat, lon });
-        if (!haveEntries && !places.some((p) => p.slug === slug)) {
-          places.push({
-            slug,
-            name: String(pick(row, nameCol) || key).trim() || slug,
-            state: stateCol ? String(pick(row, stateCol) || '').trim().toLowerCase() : '',
-            country: countryCol ? String(pick(row, countryCol) || '').trim().toLowerCase() : '',
-          });
+      const merged = { ...(wiki[entry.slug] || {}) };
+      let lat = null;
+      let lon = null;
+      for (const spec of primary) {
+        const row = lookupWikiRow(db, spec, entry);
+        if (!row) continue;
+        const { wiki: part, lat: rlat, lon: rlon } = wikiFromRow(row, spec.map, { defaultPopSource: 'Wikipedia' });
+        Object.assign(merged, part);
+        if (rlat !== null && rlon !== null && lat === null) {
+          lat = rlat;
+          lon = rlon;
         }
+      }
+      // Join the photo/licence table(s) by the image file name from the extract row.
+      if (merged.file) {
+        for (const spec of photoTables) {
+          let row = null;
+          try {
+            row = db
+              .prepare(`SELECT * FROM ${quoteIdent(spec.table)} WHERE ${quoteIdent(spec.map.file)} = ? LIMIT 1`)
+              .get(merged.file);
+          } catch (err) {
+            log(`wiki[${spec.table}]: photo join failed (${err.message})`);
+          }
+          if (!row) continue;
+          const { wiki: part } = wikiFromRow(row, spec.map);
+          // A licence/author from `ph` enriches the extract row; never clobber
+          // the file name we already have.
+          if (part.author) merged.author = part.author;
+          if (part.licence) merged.licence = part.licence;
+        }
+      }
+
+      if (Object.keys(merged).length) {
+        wiki[entry.slug] = merged;
         matched += 1;
       }
-      log(`wiki[${table}]: matched ${matched} of ${seen} row(s)`);
+      if (lat !== null && lon !== null && !coords.has(entry.slug)) coords.set(entry.slug, { lat, lon });
     }
+    log(`wiki: matched ${matched} of ${seen} place(s) in scope`);
   } finally {
     db.close();
   }
-  return { wiki, coords, places };
-}
-
-/** Exact slug match; a title key may match a slug by strict prefix. */
-function matchSlug(key, slugSet, byLen, exactOnly) {
-  if (slugSet.has(key)) return key;
-  if (exactOnly) return null;
-  for (const slug of byLen) {
-    if (key.startsWith(`${slug}-`) || slug.startsWith(`${key}-`)) return slug;
-  }
-  return null;
+  return { wiki, coords };
 }
 
 // --- Town coordinates ------------------------------------------------------
 
-/** Town coordinate TSV (`--towns`) -> rows keyed by slug (first row wins). */
-function readTownCoords(file, { state } = {}) {
-  const text = readText(file);
-  if (text === null) {
+/**
+ * Town coordinate TSV (`--towns`) -> rows keyed by slug (first row wins).
+ *
+ * The live cache has NO header (`id, name, state, lat, lon`); `--towns-cols`
+ * overrides the order, and an unknown file falls back to header detection. The
+ * `id` column is positional filler: the slug is derived from the name so it
+ * matches the place list.
+ */
+function readTownCoords(file, { state, cols, deadline, progressEvery = DEFAULTS.progressEvery } = {}) {
+  const { headerless, cols: resolved } = resolveColumns({ file, explicit: cols });
+  const rows = readTable(file, { delim: delimFor(file), headerless, cols: resolved });
+  if (rows === null) {
     log(`towns: ${file} not found; skipping`);
     return [];
   }
-  const rows = parseRecords(text, '\t');
   if (!rows.length) return [];
-  const cols = Object.keys(rows[0]);
-  const map = {
-    slug: detectColumn(cols, COLS.slug),
-    name: detectColumn(cols, COLS.name),
-    lat: detectColumn(cols, COLS.lat),
-    lon: detectColumn(cols, COLS.lon),
-    state: detectColumn(cols, COLS.state),
-  };
+  const columns = headerless ? logicalNames(resolved) : Object.keys(rows[0]);
+  const map = headerless
+    ? {
+        slug: exactField(columns, COLS.slug),
+        name: exactField(columns, COLS.name),
+        lat: exactField(columns, COLS.lat),
+        lon: exactField(columns, COLS.lon),
+        state: exactField(columns, COLS.state),
+      }
+    : {
+        slug: detectColumn(columns, COLS.slug),
+        name: detectColumn(columns, COLS.name),
+        lat: detectColumn(columns, COLS.lat),
+        lon: detectColumn(columns, COLS.lon),
+        state: detectColumn(columns, COLS.state),
+      };
   if (!map.lat || !map.lon) {
-    log(`towns: no lat/lon columns in ${file} (saw: ${cols.join(', ')}); skipping`);
+    log(`towns: no lat/lon columns in ${file} (saw: ${columns.join(', ')}); skipping`);
     return [];
   }
   const wanted = state ? String(state).toLowerCase() : null;
   const seen = new Set();
   const out = [];
+  let n = 0;
   for (const r of rows) {
+    n += 1;
+    if (n % progressEvery === 0) {
+      log(`towns: read ${n.toLocaleString()} row(s)`);
+      if (deadline) deadline.guard();
+    }
     const lat = Number(pick(r, map.lat));
     const lon = Number(pick(r, map.lon));
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
@@ -519,6 +763,7 @@ function readTownCoords(file, { state } = {}) {
     seen.add(slug);
     out.push({ slug, name: String(pick(r, map.name) || '').trim(), lat, lon });
   }
+  if (deadline) deadline.guard();
   return out;
 }
 
@@ -536,35 +781,57 @@ function computeUniqueCoords(rows) {
 
 // --- Place names (places.json source) --------------------------------------
 
-/** `/root/aw-wiki/places.tsv` -> { slug: [{ name, type, osmUrl }] }. */
-function readPlaceNames(file, { entries } = {}) {
+/**
+ * `/root/aw-wiki/places.tsv` -> `{ slug: [{ name, type, osmUrl }] }`.
+ *
+ * The live cache has NO header and NO type column; `--places-cols` overrides
+ * the order. A missing type column defaults every row to `"place"` rather than
+ * dropping the whole file.
+ */
+function readPlaceNames(file, { entries, cols, deadline, progressEvery = DEFAULTS.progressEvery } = {}) {
   const out = {};
-  const text = readText(file);
-  if (text === null) {
+  const { headerless, cols: resolved } = resolveColumns({ file, explicit: cols });
+  const rows = readTable(file, { delim: delimFor(file), headerless, cols: resolved });
+  if (rows === null) {
     log(`places: ${file} not found; skipping`);
     return out;
   }
-  const rows = parseRecords(text, '\t');
   if (!rows.length) return out;
-  const cols = Object.keys(rows[0]);
-  const map = {
-    slug: detectColumn(cols, COLS.slug),
-    name: detectColumn(cols, COLS.name),
-    type: detectColumn(cols, COLS.type),
-    url: detectColumn(cols, ['osm_url', 'url', 'link']),
-  };
-  if (!map.name || !map.type) {
-    log(`places: need name+type columns in ${file} (saw: ${cols.join(', ')}); skipping`);
+  const columns = headerless ? logicalNames(resolved) : Object.keys(rows[0]);
+  const map = headerless
+    ? {
+        slug: exactField(columns, ['slug', 'key']),
+        name: exactField(columns, COLS.name),
+        type: exactField(columns, COLS.type),
+        url: exactField(columns, ['osm_url', 'url', 'link', 'website']),
+      }
+    : {
+        slug: detectColumn(columns, COLS.slug),
+        name: detectColumn(columns, COLS.name),
+        type: detectColumn(columns, COLS.type),
+        url: detectColumn(columns, ['osm_url', 'url', 'link']),
+      };
+  if (!map.name) {
+    log(`places: need a name column in ${file} (saw: ${columns.join(', ')}); skipping`);
     return out;
   }
+  if (!map.type) log(`places: no type column in ${file}; every row defaults to type "place"`);
   const slugSet = new Set(entries.map((e) => e.slug));
+  let n = 0;
   for (const r of rows) {
+    n += 1;
+    if (n % progressEvery === 0) {
+      log(`places: read ${n.toLocaleString()} row(s)`);
+      if (deadline) deadline.guard();
+    }
     const name = String(pick(r, map.name) || '').trim();
-    const type = String(pick(r, map.type) || '').trim();
+    if (!name) continue;
+    const type = (map.type ? String(pick(r, map.type) || '').trim() : '') || 'place';
     const slug = map.slug ? String(pick(r, map.slug) || '').trim().toLowerCase() : lib.slugify(name);
-    if (!name || !type || !slugSet.has(slug)) continue;
+    if (!slugSet.has(slug)) continue;
     (out[slug] = out[slug] || []).push({ name, type, osmUrl: pick(r, map.url) || null });
   }
+  if (deadline) deadline.guard();
   return out;
 }
 
@@ -780,47 +1047,169 @@ function resolveListingFile(entry) {
 function readDirectories(sources, { entries } = {}) {
   const out = {};
   const bySlug = new Map(entries.map((e) => [e.slug, e]));
-  const seenNames = new Map();
+  const seen = new Set();
   for (const source of sources) {
     const file = resolveListingFile(source);
     if (!file) continue;
     const rows = rowsFromFile(file);
     if (!rows.length) continue;
-    const cols = Object.keys(rows[0]);
-    const map = {
-      name: detectColumn(cols, COLS.name),
-      category: detectColumn(cols, COLS.type),
-      url: detectColumn(cols, COLS.url),
-      slug: detectColumn(cols, COLS.slug),
-      city: detectColumn(cols, ['city', 'town', 'locality', 'suburb']),
-      state: detectColumn(cols, COLS.state),
-    };
-    if (!map.name || !map.url) {
-      log(`directories[${path.basename(file)}]: need name+url columns (saw: ${cols.join(', ')}); skipping`);
-      continue;
-    }
-    let kept = 0;
-    for (const row of rows) {
-      const name = String(pick(row, map.name) || '').trim();
-      const url = String(pick(row, map.url) || '').trim();
-      if (!name || !url) continue;
-      const category = String(pick(row, map.category) || '').trim().toLowerCase();
-      if (CATEGORY_DENY.some((bad) => category.includes(bad))) continue;
-      const slug = map.slug
-        ? String(pick(row, map.slug) || '').trim().toLowerCase()
-        : lib.slugify(pick(row, map.city));
-      const place = bySlug.get(slug);
-      if (!place) continue;
-      if (name.toLowerCase() === place.name.toLowerCase()) continue; // name collision with the place
-      const key = `${slug}:${name.toLowerCase()}`;
-      if (seenNames.has(key)) continue; // duplicate listing
-      seenNames.set(key, true);
-      (out[slug] = out[slug] || []).push({ name, category: category || null, url });
-      kept += 1;
-    }
-    log(`directories[${path.basename(file)}]: kept ${kept} listing(s)`);
+    mergeListings(out, seen, bySlug, rows, { source: path.basename(file) });
   }
   return out;
+}
+
+// --- Optional MySQL listing source -----------------------------------------
+
+/** Env-file keys that may hold the listings DSN, in priority order. */
+const DSN_KEYS = ['LISTINGS_DSN', 'MYSQL_DSN', 'DATABASE_URL'];
+
+/** Read a simple `KEY=VALUE` env file (the path comes from a flag). */
+function readEnvFile(file) {
+  const text = readText(file);
+  if (text === null) {
+    log(`listings: env file not found: ${file}; skipping`);
+    return null;
+  }
+  const out = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!m) continue;
+    out[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+  }
+  return out;
+}
+
+/** Parse a `mysql://user:pass@host:port/db` DSN into connection details. */
+function parseMysqlDsn(dsn) {
+  if (!dsn) return null;
+  let url;
+  try {
+    url = new URL(String(dsn).trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol.replace(':', '').toLowerCase() !== 'mysql') return null;
+  return {
+    host: url.hostname || '127.0.0.1',
+    port: url.port || '3306',
+    user: decodeURIComponent(url.username || ''),
+    password: decodeURIComponent(url.password || ''),
+    database: decodeURIComponent(url.pathname.replace(/^\/+/, '')),
+  };
+}
+
+const sqlLiteral = (value) => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+
+/** A simple, state-scoped SELECT of the columns the listings schema provides. */
+function listingSql({ table = 'listings', state } = {}) {
+  const t = isTableName(table) ? table : 'listings';
+  let sql = `SELECT name, category, suburb, state, lat, lon, url FROM \`${t}\``;
+  if (state) sql += ` WHERE LOWER(state) = ${sqlLiteral(String(state).toLowerCase())}`;
+  return sql;
+}
+
+/** Run the query through the `mysql` client (password never on argv). */
+function runMysqlQuery(cfg, sql) {
+  const args = [
+    `--host=${cfg.host}`,
+    `--port=${cfg.port}`,
+    ...(cfg.user ? [`--user=${cfg.user}`] : []),
+    ...(cfg.database ? [cfg.database] : []),
+    '--batch',
+    '--raw',
+    '-e',
+    sql,
+  ];
+  const r = spawnSync('mysql', args, {
+    encoding: 'utf8',
+    timeout: 120000,
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, ...(cfg.password ? { MYSQL_PWD: cfg.password } : {}) },
+  });
+  if (r.error) {
+    log(`listings: mysql client unavailable (${r.error.message}); skipping`);
+    return null;
+  }
+  if (r.status !== 0) {
+    const err = String(r.stderr || '').trim().split('\n').pop() || `status ${r.status}`;
+    log(`listings: mysql query failed: ${err}`);
+    return null;
+  }
+  return r.stdout;
+}
+
+/**
+ * Optional MySQL listings source (the directory apps are WordPress/MySQL, not
+ * files). The DSN comes from an env file path - never hard-coded - and only a
+ * simple `SELECT` for the scoped state is run. With no source configured the
+ * listings are skipped with a clear log line.
+ */
+function readListings({ envFile, table, state, entries, run = runMysqlQuery } = {}) {
+  const out = {};
+  if (!envFile) return out;
+  const env = readEnvFile(envFile);
+  if (!env) return out;
+  const key = DSN_KEYS.find((k) => env[k]);
+  if (!key) {
+    log(`listings: no DSN in ${envFile} (looked for ${DSN_KEYS.join(', ')}); skipping`);
+    return out;
+  }
+  const cfg = parseMysqlDsn(env[key]);
+  if (!cfg) {
+    log(`listings: could not parse the DSN in ${envFile}; skipping`);
+    return out;
+  }
+  const sql = listingSql({ table, state });
+  log(`listings: ${cfg.host}/${cfg.database || '-'} table=${isTableName(table) ? table : 'listings'} state=${state || 'all'}`);
+  const text = run(cfg, sql);
+  if (!text) return out;
+  const rows = parseRecords(text, '\t');
+  if (!rows.length) {
+    log('listings: query returned no rows');
+    return out;
+  }
+  mergeListings(out, new Set(), new Map(entries.map((e) => [e.slug, e])), rows, {
+    source: `mysql/${isTableName(table) ? table : 'listings'}`,
+  });
+  return out;
+}
+
+/** Append real, in-scope rows from one source to the listings map. */
+function mergeListings(out, seen, bySlug, rows, { source = 'listings' } = {}) {
+  if (!rows.length) return 0;
+  const cols = Object.keys(rows[0]);
+  const map = {
+    name: detectColumn(cols, COLS.name),
+    category: detectColumn(cols, COLS.type),
+    url: detectColumn(cols, COLS.url),
+    slug: detectColumn(cols, COLS.slug),
+    suburb: detectColumn(cols, ['suburb', 'locality', 'city', 'town']),
+  };
+  if (!map.name || !map.url) {
+    log(`${source}: need name+url columns (saw: ${cols.join(', ')}); skipping`);
+    return 0;
+  }
+  let kept = 0;
+  for (const row of rows) {
+    const name = String(pick(row, map.name) || '').trim();
+    const url = String(pick(row, map.url) || '').trim();
+    if (!name || !url) continue;
+    const category = String(pick(row, map.category) || '').trim().toLowerCase();
+    if (CATEGORY_DENY.some((bad) => category.includes(bad))) continue;
+    const slug = map.slug
+      ? String(pick(row, map.slug) || '').trim().toLowerCase()
+      : lib.slugify(pick(row, map.suburb));
+    const place = bySlug.get(slug);
+    if (!place) continue;
+    if (name.toLowerCase() === place.name.toLowerCase()) continue; // name collision with the place
+    const key = `${slug}:${name.toLowerCase()}`;
+    if (seen.has(key)) continue; // duplicate listing
+    seen.add(key);
+    (out[slug] = out[slug] || []).push({ name, category: category || null, url });
+    kept += 1;
+  }
+  log(`${source}: kept ${kept} listing(s)`);
+  return kept;
 }
 
 // --- Census (US population only) -------------------------------------------
@@ -877,6 +1266,10 @@ function resolveOsmFile(country, state, override) {
 /**
  * Read every local cache and assemble the in-memory `--sources` tree. Pure
  * apart from reads (and the optional network fill), so tests can assert on it.
+ *
+ * Scale rule: the place list is scoped by `--country` / `--state` / `--limit`
+ * FIRST; the wiki cache is then looked up only for the places left in scope, so
+ * the ~1.2 GB `wd.sqlite` is never walked end to end.
  */
 async function collect(options) {
   const {
@@ -890,39 +1283,46 @@ async function collect(options) {
     cacheDir,
     tmpDir,
   } = options;
+  const deadline = options.deadline || new Deadline(options.maxSeconds || DEFAULTS.maxSeconds);
 
-  // 1. Place list. Prefer the locality CSV; fall back to the wiki cache, which
-  //    is not AU-only (so US places can be wired the same way).
-  let entries = [];
-  if (paths.suburbs) {
-    entries = readSuburbs(paths.suburbs, { country, state });
+  const empty = () => ({ areas: [], wiki: {}, towns: [], places: {}, businesses: {} });
+
+  // 1. Place list (locality CSV). A read failure is fatal - we must never fall
+  //    back to walking the whole wiki cache.
+  if (!paths.suburbs) {
+    log(`place list: no --suburbs file for country=${country}; nothing to prepare`);
+    return empty();
   }
+  const all = readSuburbs(paths.suburbs, {
+    country,
+    state,
+    cols: paths.suburbsCols,
+    deadline,
+  });
 
-  const wikiState = readWikiDb(paths.wikiDb, { tables: wikiTables, entries, slugColumn: paths.wikiSlugColumn });
-  const wiki = wikiState.wiki;
-  const dbCoords = wikiState.coords;
-  // No locality CSV (e.g. a US state): the wiki cache doubles as the place list.
-  if (!entries.length && wikiState.places.length) {
-    entries = dedupePlaces(
-      wikiState.places.map((p) => ({
-        slug: p.slug,
-        name: p.name,
-        state: p.state || state || '',
-        country: p.country || country,
-      }))
-    );
-    log(`place list: derived ${entries.length} place(s) from the wiki cache`);
-  }
+  // 2. Scope BEFORE any heavy read: country, then state, then the trial limit.
+  let scoped = all;
+  if (country) scoped = scoped.filter((e) => e.country === country);
+  if (state) scoped = scoped.filter((e) => e.state === state);
+  if (limit > 0) scoped = scoped.slice(0, limit);
+  log(`scope: ${scoped.length} of ${all.length} place(s) (country=${country} state=${state || 'all'} limit=${limit || '-'})`);
+  if (!scoped.length) return empty();
 
-  if (!entries.length) {
-    return { areas: [], wiki: {}, towns: [], places: {}, businesses: {} };
-  }
+  // 3. Wiki cache: only the scoped places, and only by key lookup (never a scan).
+  const { wiki, coords: dbCoords } = readWikiDb(paths.wikiDb, {
+    tables: wikiTables,
+    entries: scoped,
+    slugColumn: paths.wikiSlugColumn,
+    deadline,
+  });
 
-  // 2. Coordinates: unique town rows first, the wiki cache as a fallback.
-  const townRows = readTownCoords(paths.towns, { state });
+  // 4. Coordinates: unique town rows first, the wiki cache as a fallback.
+  //    Uniqueness is computed over the whole state place list (not just the
+  //    limited slice), so a shared postcode centroid is still detected.
+  const townRows = readTownCoords(paths.towns, { state, cols: paths.townsCols, deadline });
   const townBySlug = new Map(townRows.map((r) => [r.slug, r]));
   const coordRows = [];
-  for (const entry of entries) {
+  for (const entry of all) {
     const row = townBySlug.get(entry.slug);
     const fromDb = dbCoords.get(entry.slug);
     const lat = row ? row.lat : fromDb ? fromDb.lat : null;
@@ -930,19 +1330,20 @@ async function collect(options) {
     if (lat === null || lon === null) continue;
     coordRows.push({ slug: entry.slug, name: entry.name, lat, lon });
   }
-  const towns = computeUniqueCoords(coordRows);
+  const townFlags = new Map(computeUniqueCoords(coordRows).map((t) => [t.slug, t]));
+  const towns = scoped.map((e) => townFlags.get(e.slug)).filter(Boolean);
   const coords = new Map(towns.filter((t) => t.unique).map((t) => [t.slug, { lat: t.lat, lon: t.lon }]));
   log(`coords: ${towns.length} town(s), ${coords.size} unique coordinate(s)`);
 
-  // 3. Places: the local place-name TSV plus OSM POIs clipped with osmium.
+  // 5. Places: the local place-name TSV plus OSM POIs clipped with osmium.
   //    The clip is the one heavy step, so a --dry-run trial skips it.
-  const places = { ...readPlaceNames(paths.places, { entries }) };
+  const places = { ...readPlaceNames(paths.places, { entries: scoped, cols: paths.placesCols, deadline }) };
   if (dryRun) {
     log('osm: skipped in dry-run');
   } else {
     const osm = osmPlaces({
       osmFile: paths.osm,
-      entries,
+      entries: scoped,
       coords,
       tmpDir: tmpDir || fs.mkdtempSync(path.join(os.tmpdir(), 'areas-prepare-')),
       limit: DEFAULTS.placesLimit,
@@ -956,22 +1357,33 @@ async function collect(options) {
     }
   }
 
-  // 4. Businesses from our own directory sites.
-  const businesses = paths.directories.length
-    ? readDirectories(paths.directories, { entries })
-    : {};
+  // 6. Businesses: our own directory file sources plus the optional MySQL
+  //    listings source. With neither configured this is skipped with a log line.
+  const businesses = {};
+  if (paths.directories && paths.directories.length) {
+    Object.assign(businesses, readDirectories(paths.directories, { entries: scoped }));
+  }
+  if (paths.listingsEnv) {
+    for (const [slug, list] of Object.entries(
+      readListings({ envFile: paths.listingsEnv, table: paths.listingsTable, state, entries: scoped })
+    )) {
+      businesses[slug] = (businesses[slug] || []).concat(list);
+    }
+  } else if (!paths.directories || !paths.directories.length) {
+    log('listings: no MySQL source (--listings-env) or directory file configured; skipping listings');
+  }
 
-  // 5. Census: local attributed figures only (never invented).
+  // 7. Census: local attributed figures only (never invented).
   if (paths.census) {
-    const census = readCensus(paths.census, { entries });
+    const census = readCensus(paths.census, { entries: scoped });
     for (const [slug, pop] of Object.entries(census)) {
       wiki[slug] = { ...(wiki[slug] || {}), population: pop };
     }
   }
 
-  // 6. Optional, last-resort Wikipedia fill for places still missing an extract.
+  // 8. Optional, last-resort Wikipedia fill for places still missing an extract.
   if (allowNetwork) {
-    for (const entry of entries) {
+    for (const entry of scoped) {
       const existing = wiki[entry.slug];
       if (existing && existing.extract) continue;
       try {
@@ -983,20 +1395,6 @@ async function collect(options) {
     }
   }
 
-  // 7. Keep only the requested scope, then apply the trial limit.
-  let scoped = entries;
-  if (country) scoped = scoped.filter((e) => e.country === country);
-  if (state) scoped = scoped.filter((e) => e.state === state);
-  if (limit > 0) scoped = scoped.slice(0, limit);
-  const scopedSlugs = new Set(scoped.map((e) => e.slug));
-  const scopedWiki = {};
-  for (const [slug, value] of Object.entries(wiki)) if (scopedSlugs.has(slug)) scopedWiki[slug] = value;
-  const scopedTowns = towns.filter((t) => scopedSlugs.has(t.slug));
-  const scopedPlaces = {};
-  for (const [slug, value] of Object.entries(places)) if (scopedSlugs.has(slug)) scopedPlaces[slug] = value;
-  const scopedBusinesses = {};
-  for (const [slug, value] of Object.entries(businesses)) if (scopedSlugs.has(slug)) scopedBusinesses[slug] = value;
-
   return {
     areas: scoped.map((e) => ({
       name: e.name,
@@ -1007,10 +1405,10 @@ async function collect(options) {
       slug: e.slug,
       postcode: e.postcode || '',
     })),
-    wiki: scopedWiki,
-    towns: scopedTowns,
-    places: scopedPlaces,
-    businesses: scopedBusinesses,
+    wiki,
+    towns,
+    places,
+    businesses,
   };
 }
 
@@ -1065,23 +1463,30 @@ async function main(argv = process.argv.slice(2)) {
   const outDir = path.resolve(ROOT, args.out || DEFAULTS.out);
   const cacheDir = path.resolve(ROOT, args.cache || DEFAULTS.cache);
   const limit = args.limit ? Math.max(0, parseInt(args.limit, 10)) : 0;
+  const maxSeconds = args.maxSeconds ? Number(args.maxSeconds) : DEFAULTS.maxSeconds;
   const dryRun = Boolean(args.dryRun);
   const allowNetwork = Boolean(args.allowNetwork);
 
   const paths = {
     suburbs: args.suburbs !== undefined ? args.suburbs : defaults.suburbs,
+    suburbsCols: args.suburbsCols || process.env.AREAS_SUBURBS_COLS || null,
     towns: args.towns || HOST.towns,
+    townsCols: args.townsCols || process.env.AREAS_TOWNS_COLS || null,
     places: args.places || HOST.places,
+    placesCols: args.placesCols || process.env.AREAS_PLACES_COLS || null,
     wikiDb: args.wikiDb || HOST.wikiDb,
     wikiSlugColumn: args.wikiSlugColumn || null,
     osm: resolveOsmFile(country, state, args.osmFile),
     directories: args.directories ? String(args.directories).split(',').filter(Boolean) : defaults.directories,
+    listingsEnv: args.listingsEnv || process.env.AREAS_LISTINGS_ENV || null,
+    listingsTable: args.listingsTable || process.env.AREAS_LISTINGS_TABLE || 'listings',
     census: args.census || null,
   };
   const wikiTables = args.wikiTables ? String(args.wikiTables).split(',').filter(Boolean) : HOST.wikiTables.split(',');
 
-  log(`start country=${country} state=${state || 'all'} out=${outDir} network=${allowNetwork ? 'on' : 'off'}${dryRun ? ' dry-run' : ''}`);
+  log(`start country=${country} state=${state || 'all'} out=${outDir} max=${maxSeconds}s network=${allowNetwork ? 'on' : 'off'}${dryRun ? ' dry-run' : ''}`);
   log(`sources: suburbs=${paths.suburbs || '-'} towns=${paths.towns} wiki=${paths.wikiDb} osm=${paths.osm || '-'}`);
+  log(`listings: ${paths.listingsEnv ? `env=${paths.listingsEnv} table=${paths.listingsTable}` : 'none configured (skipped)'}`);
 
   if (!loadGateOk()) {
     log('load gate not ok (main-ok.sh); skipping this run');
@@ -1089,10 +1494,17 @@ async function main(argv = process.argv.slice(2)) {
   }
   applyLowPriority();
 
+  const deadline = new Deadline(maxSeconds);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'areas-prepare-'));
   let sources;
   try {
-    sources = await collect({ country, state, limit, paths, wikiTables, allowNetwork, dryRun, cacheDir, tmpDir });
+    sources = await collect({ country, state, limit, paths, wikiTables, allowNetwork, dryRun, cacheDir, tmpDir, deadline });
+  } catch (err) {
+    if (err instanceof TimeBudgetError) {
+      log(`stopping: ${err.message} (nothing written)`);
+      return { error: 'time-budget' };
+    }
+    throw err;
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -1132,17 +1544,25 @@ module.exports = {
   writeSources,
   parseArgs,
   detectColumn,
+  resolveColumns,
   computeUniqueCoords,
   readSuburbs,
   readTownCoords,
   readWikiDb,
   readPlaceNames,
   readDirectories,
+  readListings,
+  readEnvFile,
+  parseMysqlDsn,
+  listingSql,
   readCensus,
   placesFromGeoJson,
   resolveOsmFile,
   loadGateOk,
+  Deadline,
+  TimeBudgetError,
   DEFAULTS,
   HOST,
   COUNTRIES,
+  KNOWN_CACHE_COLS,
 };

@@ -282,9 +282,11 @@ nice -n 19 ionice -c idle node scripts/areas/prepare.js \
 ```
 
 Flags: `--country` (required), `--state`, `--out` (default `data/areas-src`),
-`--limit`, `--dry-run`, `--allow-network` (**off** by default), `--cache`,
-`--suburbs`, `--towns`, `--places`, `--wiki-db`, `--wiki-tables`, `--osm-file`,
-`--directories`, `--census`. The defaults point at the caches already on the
+`--limit`, `--dry-run`, `--max-seconds` (default `300`), `--allow-network`
+(**off** by default), `--cache`, `--suburbs` + `--suburbs-cols`, `--towns` +
+`--towns-cols`, `--places` + `--places-cols`, `--wiki-db`, `--wiki-tables`,
+`--wiki-slug-column`, `--osm-file`, `--directories`, `--listings-env`,
+`--listings-table`, `--census`. The defaults point at the caches already on the
 data host:
 
 | Source | Default path on the data host |
@@ -292,19 +294,39 @@ data host:
 | Localities — names + postcodes only, **never** distances (centroid table) | `/root/ap_suburbs.csv` |
 | Town coordinates (the only distance source) | `/root/as-wiki/towns.tsv` |
 | Place names | `/root/aw-wiki/places.tsv` |
-| Wikipedia / Commons cache | `/root/aw-wiki/wd.sqlite` (tables `en`, `it`, `ph`, others) |
+| Wikipedia / Commons cache | `/root/aw-wiki/wd.sqlite` (tables `en`, `ph`; the ~12.2M-row `it` table is **skipped** by default) |
 | OpenStreetMap extract — clipped locally with `osmium` (never Overpass) | `/root/geofabrik/pbf/AU.pbf` · `/root/geofabrik/pbf/US.pbf` (or `us-<state>-latest.osm.pbf`) |
-| Directory databases (real published local listings only) | australiaweb · localaus · eatzap · findacarer (AU) · localusa · eatzap (US) |
+| Directory listings (optional) | a MySQL DSN via `--listings-env` (below) |
+
+The live caches carry **no header row**, so each known cache has a built-in
+column order — `/root/ap_suburbs.csv` is `name,state,postcode,lat,lon`,
+`/root/as-wiki/towns.tsv` is `id,name,state,lat,lon`, and
+`/root/aw-wiki/places.tsv` is `name` (no type column, so every row defaults to
+type `place`). Override any of them with `--suburbs-cols` / `--towns-cols` /
+`--places-cols` (or `AREAS_SUBURBS_COLS` etc.); only an *unknown* file falls back
+to header detection.
+
+The directory apps (australiaweb, localaus, eatzap, findacarer, localusa) are
+WordPress/MySQL sites, so the listings source is **optional and pluggable**: pass
+`--listings-env <file>` pointing at a `KEY=VALUE` env file that holds a MySQL DSN
+(`LISTINGS_DSN=mysql://user:pass@host:port/db`) and prepare runs a simple
+state-scoped `SELECT` of `name, category, suburb, state, lat, lon, url`. The
+password rides in the environment, never on the command line. With no source
+configured the listings are skipped with a log line.
 
 Honesty rules hold. Local data comes first; the network is a last resort only
 (`--allow-network`, rate-limited to one request/second and cached per response).
-Columns are detected by name from the real files (`PRAGMA table_info` on the
-SQLite cache), so no schema is assumed: an unknown column, a missing file or an
-unnamed place is **skipped** with a log line, never guessed. `unique` is computed
-from the coordinates themselves — a point shared by several places (a postcode
-centroid) is written `unique=false` and never becomes a `km`. US population is
-written only from a local attributed Census file (`--census`); with none the
-section stays empty rather than inventing figures.
+The place list is scoped by `--country` / `--state` / `--limit` **before** any
+heavy read, so the ~1.2 GB `wd.sqlite` is never walked end to end: its columns
+are introspected once (`PRAGMA table_info`) and each place is fetched by title
+(or slug), with photos joined by file name. A missing column, a missing file or
+an unnamed place is **skipped** with a log line, never guessed; a place list
+that cannot be read fails the run rather than falling back to the whole cache.
+`--max-seconds` bounds every run and progress is logged every 10,000 rows.
+`unique` is computed from the coordinates themselves — a point shared by several
+places (a postcode centroid) is written `unique=false` and never becomes a `km`.
+US population is written only from a local attributed Census file (`--census`);
+with none the section stays empty rather than inventing figures.
 
 #### 2. Build: `--sources` → area JSON
 

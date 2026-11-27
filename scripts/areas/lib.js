@@ -95,6 +95,29 @@ function parseRecords(text, delim) {
   });
 }
 
+/**
+ * Parse a *header-less* delimited file where the caller supplies the column
+ * order. Every line is data; `cells[i]` is stored under `cols[i]`. This is the
+ * shape of the live caches (`/root/ap_suburbs.csv`, `/root/as-wiki/towns.tsv`,
+ * `/root/aw-wiki/places.tsv`), which carry no header row.
+ *
+ * `cols` may be an array or a comma-separated string ("name,state,postcode").
+ */
+function parsePositional(text, delim, cols) {
+  const names = (Array.isArray(cols) ? cols : String(cols || '').split(','))
+    .map((c) => String(c).trim().toLowerCase())
+    .filter(Boolean);
+  if (!names.length) return [];
+  const rows = parseDelimited(text, delim).filter((r) => r.some((c) => c.trim() !== ''));
+  return rows.map((cells) => {
+    const record = {};
+    names.forEach((key, i) => {
+      record[key] = (cells[i] || '').trim();
+    });
+    return record;
+  });
+}
+
 const truthy = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 
 // --- Source readers --------------------------------------------------------
@@ -333,6 +356,7 @@ function writeAreas(outDir, areas) {
 module.exports = {
   slugify,
   parseRecords,
+  parsePositional,
   readPlaceList,
   readUniqueCoords,
   loadSources,

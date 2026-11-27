@@ -8,10 +8,21 @@
  * writes the tidy `--sources` tree that `scripts/areas/build.js` consumes.
  *
  * These tests use tiny fixture stand-ins only - a locality CSV, a town TSV, a
- * place-name TSV and a throwaway SQLite DB built in the temp dir - so there is
- * no real PBF, no osmium and no network. They prove:
+ * place-name TSV and throwaway SQLite DBs built in the temp dir - so there is
+ * no real PBF, no osmium and no network. They prove the fixes found on the live
+ * data host:
+ *   - the live caches carry NO header row, so each known cache has a built-in
+ *     column map (with a `--<role>-cols` override) and only an *unknown* file
+ *     falls back to header detection;
+ *   - a place-name file with no type column defaults every row to "place";
+ *   - the ~1.2 GB wiki cache is read by key (en/ex/pop/py/img + ph/file,data),
+ *     never full-scanned;
+ *   - `--country` / `--state` / `--limit` are applied *before* the wiki lookup;
+ *   - a missing place list fails loudly instead of walking the whole cache;
+ *   - `--max-seconds` and per-10,000-row progress logs bound a run;
+ *   - the directory listings are optional/pluggable (a MySQL DSN from an env
+ *     file) and skipped with a log line when none is configured.
  *   - unique vs shared coordinates (a postcode centroid is never a distance);
- *   - a place with no wiki row is skipped, leaving the rest of the area intact;
  *   - the prepared tree is schema-valid (it round-trips through the real loader).
  *
  * Run with: `npm test` (node --test).
@@ -40,6 +51,32 @@ delete process.env.AREA_PAGES_ENABLED;
 const prepare = require('../scripts/areas/prepare');
 const build = require('../scripts/areas/build');
 const areas = require('../src/config/areas');
+
+/** Run `fn` while capturing everything logged to the console. */
+function captureLogs(fn) {
+  const logs = [];
+  const original = console.log;
+  console.log = (...args) => logs.push(args.join(' '));
+  try {
+    fn();
+  } finally {
+    console.log = original;
+  }
+  return logs;
+}
+
+/** Await `fn` while capturing everything logged to the console. */
+async function captureLogsAsync(fn) {
+  const logs = [];
+  const original = console.log;
+  console.log = (...args) => logs.push(args.join(' '));
+  try {
+    await fn();
+  } finally {
+    console.log = original;
+  }
+  return logs;
+}
 
 /** A tiny `wd.sqlite`-shaped stand-in: `en` (extracts), `ph` (photos), `it`. */
 function makeWikiDb() {
@@ -80,11 +117,40 @@ function makeWikiDb() {
   return file;
 }
 
+/**
+ * A cache in the *real* data-host schema: `en(title, ex, pop, py, img)` and
+ * `ph(file, data)`, plus an `it` table that must never be scanned by default.
+ */
+function makeRealWikiDb() {
+  const file = path.join(TMP, 'wd-real.sqlite');
+  fs.rmSync(file, { force: true });
+  const db = new Database(file);
+  db.exec('CREATE TABLE en (title TEXT, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+  db.exec('CREATE TABLE ph (file TEXT, data TEXT)');
+  db.exec('CREATE TABLE it (title TEXT, ex TEXT)');
+  const en = db.prepare('INSERT INTO en VALUES (?,?,?,?,?)');
+  en.run(
+    'Newcastle, New South Wales',
+    'Newcastle is the hub of the Lower Hunter region of New South Wales.',
+    322278,
+    2021,
+    'The_Custom_House,_Newcastle.jpg'
+  );
+  en.run('Maitland, New South Wales', 'Maitland sits on the banks of the Hunter River.', 90000, 2021, null);
+  db.prepare('INSERT INTO ph VALUES (?,?)').run('The_Custom_House,_Newcastle.jpg', 'CC BY-SA 3.0');
+  db.prepare('INSERT INTO it VALUES (?,?)').run('Newcastle', 'Newcastle (in Italian)');
+  db.close();
+  return file;
+}
+
 const FIXTURE_ARGS = (extra = []) => [
   '--country', 'au', '--state', 'nsw',
+  // The live caches carry NO header row, so the column order is supplied.
   '--suburbs', path.join(FIX, 'ap_suburbs.csv'),
+  '--suburbs-cols', 'name,state,postcode,lga',
   '--towns', path.join(FIX, 'towns.tsv'),
   '--places', path.join(FIX, 'places.tsv'),
+  '--places-cols', 'slug,name',
   '--wiki-db', makeWikiDb(),
   ...extra,
 ];
@@ -122,6 +188,187 @@ test('area prepare step', async (t) => {
     assert.equal(bySlug.get('b'), true);
     assert.equal(bySlug.get('c'), false, 'a shared centroid is not unique');
     assert.equal(bySlug.get('d'), false);
+  });
+
+  await t.test('known caches use a built-in column map; unknown files fall back to headers', () => {
+    assert.deepEqual(prepare.resolveColumns({ file: '/root/ap_suburbs.csv' }), {
+      headerless: true,
+      cols: 'name,state,postcode,lat,lon',
+    });
+    assert.deepEqual(prepare.resolveColumns({ file: '/root/as-wiki/towns.tsv' }), {
+      headerless: true,
+      cols: 'id,name,state,lat,lon',
+    });
+    assert.deepEqual(prepare.resolveColumns({ file: '/root/aw-wiki/places.tsv' }), {
+      headerless: true,
+      cols: 'name',
+    });
+    // A different file name is not known -> header detection.
+    assert.deepEqual(prepare.resolveColumns({ file: tempFile('mystery.csv', '') }), {
+      headerless: false,
+      cols: null,
+    });
+    // A CLI/env override always wins and forces positional reading.
+    assert.deepEqual(prepare.resolveColumns({ file: '/root/ap_suburbs.csv', explicit: 'a,b,c' }), {
+      headerless: true,
+      cols: 'a,b,c',
+    });
+  });
+
+  await t.test('readSuburbs reads a header-less cache and a header-ed unknown file', () => {
+    const headerless = tempFile(
+      'ap_suburbs.csv',
+      'Newcastle,NSW,2300,City of Newcastle\nMaitland,NSW,2320,City of Maitland\n'
+    );
+    const rows = prepare.readSuburbs(headerless, {
+      country: 'au',
+      state: 'nsw',
+      cols: 'name,state,postcode,lga',
+    });
+    assert.deepEqual(rows.map((r) => r.slug), ['newcastle', 'maitland']);
+    assert.equal(rows[0].lga, 'City of Newcastle');
+
+    // An unknown file name still works via header detection.
+    const headed = tempFile('other-localities.csv', 'Locality,State,Postcode\nNewcastle,NSW,2300\n');
+    const detected = prepare.readSuburbs(headed, { country: 'au', state: 'nsw' });
+    assert.equal(detected.length, 1);
+    assert.equal(detected[0].slug, 'newcastle');
+    assert.equal(detected[0].postcode, '2300');
+  });
+
+  await t.test('readSuburbs fails clearly when the place list cannot be read', async () => {
+    assert.throws(
+      () => prepare.readSuburbs(path.join(TMP, 'nope.csv'), { country: 'au' }),
+      /refusing to fall back/
+    );
+    // The run fails rather than falling back to walking the whole wiki cache.
+    await assert.rejects(
+      prepare.main(['--country', 'au', '--state', 'nsw', '--suburbs', path.join(TMP, 'nope.csv'), '--dry-run']),
+      /refusing to fall back/
+    );
+  });
+
+  await t.test('readPlaceNames defaults a missing type column to "place"', () => {
+    const file = tempFile('places.tsv', 'newcastle\tNewcastle Museum\nnewcastle\tForeshore Park\n');
+    const out = prepare.readPlaceNames(file, {
+      entries: [{ slug: 'newcastle', name: 'Newcastle' }],
+      cols: 'slug,name',
+    });
+    assert.equal(out.newcastle.length, 2, 'the file is not skipped for want of a type');
+    assert.deepEqual(out.newcastle.map((p) => p.type), ['place', 'place']);
+    assert.deepEqual(out.newcastle.map((p) => p.name), ['Newcastle Museum', 'Foreshore Park']);
+  });
+
+  await t.test('readWikiDb reads the real en(ex,pop,py,img)/ph(file,data) schema by title', () => {
+    const { wiki, coords } = prepare.readWikiDb(makeRealWikiDb(), {
+      tables: ['en', 'ph'],
+      entries: [
+        { slug: 'newcastle', name: 'Newcastle' },
+        { slug: 'maitland', name: 'Maitland' },
+      ],
+    });
+    // Matched by a strict "Newcastle," title prefix - never a table scan.
+    assert.ok(wiki.newcastle.extract.includes('Hunter'));
+    assert.equal(wiki.newcastle.file, 'The_Custom_House,_Newcastle.jpg');
+    assert.equal(wiki.newcastle.licence, 'CC BY-SA 3.0');
+    assert.deepEqual(wiki.newcastle.population, {
+      value: 322278,
+      year: 2021,
+      source: 'Wikipedia',
+      sourceUrl: null,
+    });
+    assert.ok(wiki.maitland.extract.includes('Hunter'));
+    assert.equal(wiki.maitland.file, undefined, 'no img -> no photo');
+    assert.equal(coords.size, 0);
+  });
+
+  await t.test('the time budget stops a run instead of running silently', () => {
+    const spent = new prepare.Deadline(1);
+    spent.start = Date.now() - 5000; // pretend we already used 5s of a 1s budget
+    assert.equal(spent.expired, true);
+    assert.throws(() => spent.guard(), prepare.TimeBudgetError);
+
+    const unlimited = new prepare.Deadline(0); // 0 disables the budget
+    assert.equal(unlimited.expired, false);
+    unlimited.guard(); // never throws
+
+    assert.equal(prepare.DEFAULTS.maxSeconds, 300);
+    assert.equal(prepare.DEFAULTS.progressEvery, 10000);
+  });
+
+  await t.test('progress is logged every N rows', () => {
+    const lines = [];
+    for (let i = 0; i < 25; i += 1) lines.push(`Place${i},NSW,2000`);
+    const file = tempFile('ap_suburbs.csv', `${lines.join('\n')}\n`);
+    const logs = captureLogs(() =>
+      prepare.readSuburbs(file, { country: 'au', state: 'nsw', cols: 'name,state,postcode', progressEvery: 10 })
+    );
+    assert.ok(logs.some((l) => l.includes('read 10 row(s)')));
+    assert.ok(logs.some((l) => l.includes('read 20 row(s)')));
+  });
+
+  await t.test('the listings source is optional and pluggable', async () => {
+    // DSN parsing: mysql only, credentials decoded.
+    assert.deepEqual(prepare.parseMysqlDsn('mysql://user:p%40ss@db.internal:3307/directory'), {
+      host: 'db.internal',
+      port: '3307',
+      user: 'user',
+      password: 'p@ss',
+      database: 'directory',
+    });
+    assert.equal(prepare.parseMysqlDsn('postgres://x'), null);
+    assert.equal(prepare.parseMysqlDsn('not a url'), null);
+
+    // A stubbed runner proves a state-scoped SELECT and category filtering.
+    const envFile = tempFile('listings.env', '# listings\nLISTINGS_DSN="mysql://u:p@localhost/db"\n');
+    const calls = [];
+    const run = (cfg, sql) => {
+      calls.push({ cfg, sql });
+      return [
+        'name\tcategory\tsuburb\tstate\tlat\tlon\turl',
+        'Hunter Cafe\tcafe\tNewcastle\tnsw\t\t\thttps://x.example/hunter',
+        "Roy's Casino\tcasino\tNewcastle\tnsw\t\t\thttps://x.example/casino",
+        '',
+      ].join('\n');
+    };
+    const out = prepare.readListings({
+      envFile,
+      table: 'listings',
+      state: 'nsw',
+      entries: [{ slug: 'newcastle', name: 'Newcastle' }],
+      run,
+    });
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].sql, /SELECT name, category, suburb, state, lat, lon, url FROM `listings`/);
+    assert.match(calls[0].sql, /LOWER\(state\) = 'nsw'/);
+    assert.equal(calls[0].cfg.password, 'p', 'the password never rides on argv');
+    assert.equal(out.newcastle.length, 1, 'the denied category (casino) is dropped');
+    assert.equal(out.newcastle[0].name, 'Hunter Cafe');
+
+    // With no source configured the run skips listings with a clear log line.
+    const logs = await captureLogsAsync(() =>
+      prepare.main(FIXTURE_ARGS(['--dry-run', '--out', path.join(TMP, 'listings-dry')]))
+    );
+    assert.ok(logs.some((l) => l.includes('skipping listings')), 'a clear skip line is logged');
+  });
+
+  await t.test('scopes country/state/limit BEFORE the wiki lookup', async () => {
+    const outDir = path.join(TMP, 'scope-dry');
+    let result;
+    const logs = await captureLogsAsync(async () => {
+      result = await prepare.main(FIXTURE_ARGS(['--limit', '2', '--dry-run', '--out', outDir]));
+    });
+    assert.equal(result.sources.areas.length, 2, 'the limit is applied to the place list');
+    assert.deepEqual(
+      result.sources.areas.map((a) => a.slug),
+      ['newcastle', 'maitland']
+    );
+    // Only the two in-scope places were looked up in the cache.
+    assert.deepEqual(Object.keys(result.sources.wiki).sort(), ['maitland', 'newcastle']);
+    assert.ok(
+      logs.some((l) => l.includes('matched 2 of 2 place(s) in scope')),
+      'the wiki cache is queried for the scoped places only'
+    );
   });
 
   await t.test('dry-run computes the tree but writes nothing', async () => {
@@ -177,6 +424,11 @@ test('area prepare step', async (t) => {
     assert.equal(wiki.cessnock.file, undefined, 'no Commons file -> no photo');
     assert.equal(wiki.kearsley, undefined, 'no cache row -> skipped missing wiki');
     assert.equal(wiki.sydney, undefined, 'no cache row -> skipped missing wiki');
+
+    // places.json: the type-less place-name file defaults every row to "place".
+    const places = JSON.parse(fs.readFileSync(path.join(outDir, 'places.json'), 'utf8'));
+    assert.equal(places.newcastle.length, 2);
+    assert.deepEqual(places.newcastle.map((p) => p.type), ['place', 'place']);
   });
 
   await t.test('a missing wiki cache is skipped without failing', async () => {
@@ -184,6 +436,7 @@ test('area prepare step', async (t) => {
     await prepare.main([
       '--country', 'au', '--state', 'nsw',
       '--suburbs', path.join(FIX, 'ap_suburbs.csv'),
+      '--suburbs-cols', 'name,state,postcode,lga',
       '--towns', path.join(FIX, 'towns.tsv'),
       '--wiki-db', path.join(TMP, 'does-not-exist.sqlite'),
       '--out', outDir,
@@ -230,3 +483,11 @@ test('area prepare step', async (t) => {
     }
   });
 });
+
+/** Write a throwaway fixture file into the temp dir; returns its path. */
+function tempFile(name, contents) {
+  const dir = fs.mkdtempSync(path.join(TMP, 'file-'));
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, contents);
+  return file;
+}
