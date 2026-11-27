@@ -284,7 +284,8 @@ nice -n 19 ionice -c idle node scripts/areas/prepare.js \
 Flags: `--country` (required), `--state`, `--out` (default `data/areas-src`),
 `--limit`, `--dry-run`, `--max-seconds` (default `300`), `--allow-network`
 (**off** by default), `--cache`, `--suburbs` + `--suburbs-cols`, `--towns` +
-`--towns-cols`, `--places` + `--places-cols`, `--wiki-db`, `--wiki-tables`,
+`--towns-cols`, `--places` (force an exact `A,B,C` list), `--places-file` +
+`--places-cols`, `--places-deny`, `--places-allow`, `--wiki-db`, `--wiki-tables`,
 `--wiki-slug-column`, `--osm-file`, `--directories`, `--listings-env`,
 `--listings-table`, `--census`. The defaults point at the caches already on the
 data host:
@@ -314,14 +315,41 @@ state-scoped `SELECT` of `name, category, suburb, state, lat, lon, url`. The
 password rides in the environment, never on the command line. With no source
 configured the listings are skipped with a log line.
 
+**How places are picked.** Inside the `--country` / `--state` scope the place
+list is cleaned up and then **ranked by importance, biggest first, before
+`--limit` is applied** — so a trial keeps real towns (Melbourne, Geelong,
+Ballarat, Bendigo) rather than a postcode-centroid row that merely happened to
+be first in the file:
+
+1. **Population** from `wd.sqlite` table `en` (column `pop`), matched by title —
+   for the scoped places only (an indexed lookup, never a full scan).
+2. **Real towns** (`towns.tsv`) rank above suburbs-file-only names.
+3. **A Wikipedia extract** (`ex`) ranks above no extract.
+4. File order breaks any remaining tie (the sort is stable).
+
+Non-places are dropped: postcode-only and PO-Box style names always, and names
+containing a deny word (`Centre`, `Central`, `GPO`, `Delivery`, `Mail`,
+`Business`, `University`, `LPO`, `DC`, `Wharf`) when they **share a postcode
+with a real suburb**. Extend the list with `--places-deny` or override it with
+`--places-allow` (both also read `AREAS_PLACES_DENY` / `AREAS_PLACES_ALLOW`).
+The same name in the same state within 5 km is merged into one place; the same
+name in a different state stays separate.
+
+`--places "Geelong,Ballarat,Bendigo"` forces an **exact** list in the given
+order (bypassing the ranking and the skip rules). In `--dry-run` the chosen
+places are printed with their rank reason, e.g. `Melbourne (vic) [pop=5300000,
+town, wiki]`.
+
 Honesty rules hold. Local data comes first; the network is a last resort only
 (`--allow-network`, rate-limited to one request/second and cached per response).
-The place list is scoped by `--country` / `--state` / `--limit` **before** any
-heavy read, so the ~1.2 GB `wd.sqlite` is never walked end to end: its columns
-are introspected once (`PRAGMA table_info`) and each place is fetched by title
-(or slug), with photos joined by file name. A missing column, a missing file or
-an unnamed place is **skipped** with a log line, never guessed; a place list
-that cannot be read fails the run rather than falling back to the whole cache.
+The place list is scoped by `--country` / `--state` **before** any heavy read, so
+the ~1.2 GB `wd.sqlite` is never walked end to end: its columns are introspected
+once (`PRAGMA table_info`) and each place is fetched by title (or slug), with
+photos joined by file name — the extra lookups needed for ranking stay inside
+the state scope, and the written `wiki.json` is trimmed back to the chosen
+places. A missing column, a missing file or an unnamed place is **skipped** with
+a log line, never guessed; a place list that cannot be read fails the run rather
+than falling back to the whole cache.
 `--max-seconds` bounds every run and progress is logged every 10,000 rows.
 `unique` is computed from the coordinates themselves — a point shared by several
 places (a postcode centroid) is written `unique=false` and never becomes a `km`.

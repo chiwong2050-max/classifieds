@@ -59,8 +59,11 @@
  *   --suburbs-cols <list> column order for that file  (default name,state,postcode,lat,lon)
  *   --towns <file>        town coordinates TSV        (default /root/as-wiki/towns.tsv)
  *   --towns-cols <list>   column order for that file  (default id,name,state,lat,lon)
- *   --places <file>       place-name TSV              (default /root/aw-wiki/places.tsv)
+ *   --places <a,b,c>      force an EXACT place list, in the given order
+ *   --places-file <file>  place-name TSV              (default /root/aw-wiki/places.tsv)
  *   --places-cols <list>  column order for that file  (default name; type defaults to "place")
+ *   --places-deny <list>  extra non-place words to skip (added to the built-in list)
+ *   --places-allow <list> names/words never skipped (overrides the deny-list)
  *   --wiki-db <file>      Wikipedia/Commons SQLite    (default /root/aw-wiki/wd.sqlite)
  *   --wiki-tables <list>  cache tables to read        (default en,ph - "it" is skipped)
  *   --osm-file <pbf>      OSM extract                 (AU: AU.pbf, US: US.pbf)
@@ -95,7 +98,27 @@ const DEFAULTS = {
   poiRadiusKm: 15,
   maxSeconds: 300,
   progressEvery: 10000,
+  // Same-name places closer than this (km) are merged into one place.
+  placeMergeKm: 5,
 };
+
+/**
+ * Non-place words skipped by default when they share a postcode with a real
+ * suburb (a "World Trade Centre" row next to "Melbourne"). A `--places-allow`
+ * entry always wins over this list; `--places-deny` adds to it.
+ */
+const DEFAULT_DENY_WORDS = [
+  'centre',
+  'central',
+  'gpo',
+  'delivery',
+  'mail',
+  'business',
+  'university',
+  'lpo',
+  'dc',
+  'wharf',
+];
 
 /** Caches that live on the data host and are not country-specific. */
 const HOST = {
@@ -365,8 +388,11 @@ function printHelp() {
       `  --suburbs-cols <list> column order            (default ${KNOWN_CACHE_COLS['ap_suburbs.csv']})`,
       `  --towns <file>        town TSV (no header)      (default ${HOST.towns})`,
       `  --towns-cols <list>   column order            (default ${KNOWN_CACHE_COLS['towns.tsv']})`,
-      `  --places <file>       place-name TSV (no header)(default ${HOST.places})`,
+      '  --places <a,b,c>      force an EXACT place list, in the given order',
+      `  --places-file <file>  place-name TSV (no header)(default ${HOST.places})`,
       `  --places-cols <list>  column order            (default ${KNOWN_CACHE_COLS['places.tsv']}; type=place)`,
+      '  --places-deny <list>  extra non-place words to skip (added to the built-in list)',
+      '  --places-allow <list> names/words never skipped (overrides the deny-list)',
       `  --wiki-db <file>      Wikipedia SQLite cache   (default ${HOST.wikiDb})`,
       `  --wiki-tables <list>  cache tables to read     (default ${HOST.wikiTables})`,
       '  --osm-file <pbf>      OSM extract (AU: AU.pbf, US: US.pbf)',
@@ -426,6 +452,8 @@ function readSuburbs(file, { country, state, cols, deadline, progressEvery = DEF
         state: exactField(columns, COLS.state),
         lga: exactField(columns, COLS.lga),
         county: exactField(columns, COLS.county),
+        lat: exactField(columns, COLS.lat),
+        lon: exactField(columns, COLS.lon),
       }
     : {
         name: detectColumn(columns, COLS.name),
@@ -433,6 +461,8 @@ function readSuburbs(file, { country, state, cols, deadline, progressEvery = DEF
         state: detectColumn(columns, COLS.state),
         lga: detectColumn(columns, COLS.lga),
         county: detectColumn(columns, COLS.county),
+        lat: detectColumn(columns, COLS.lat),
+        lon: detectColumn(columns, COLS.lon),
       };
   if (!map.name || !columns.includes(map.name)) {
     throw new Error(`suburbs file has no name column: ${file} (saw: ${columns.join(', ')})`);
@@ -454,6 +484,8 @@ function readSuburbs(file, { country, state, cols, deadline, progressEvery = DEF
     // Without a state column and no --state scope we cannot attribute the row.
     if (!rowState) continue;
     if (wanted && rowState !== wanted) continue;
+    const lat = map.lat ? Number(pick(r, map.lat)) : NaN;
+    const lon = map.lon ? Number(pick(r, map.lon)) : NaN;
     out.push({
       name,
       state: rowState,
@@ -461,28 +493,182 @@ function readSuburbs(file, { country, state, cols, deadline, progressEvery = DEF
       lga: map.lga ? String(pick(r, map.lga) || '').trim() : '',
       county: map.county ? String(pick(r, map.county) || '').trim() : '',
       postcode: map.postcode ? String(pick(r, map.postcode) || '').trim() : '',
+      lat: Number.isFinite(lat) ? lat : null,
+      lon: Number.isFinite(lon) ? lon : null,
     });
   }
   if (deadline) deadline.guard();
   if (!out.length && wanted) log(`suburbs: no rows matched state=${wanted}`);
-  return dedupePlaces(out);
+  return mergePlaces(out);
 }
 
-/** Drop duplicate slugs (keeps the first), logging each drop. */
-function dedupePlaces(rows) {
-  const seen = new Set();
+/**
+ * Merge duplicate place rows into one place each.
+ *
+ * Two rows are the *same place* when they slug to the same name, sit in the
+ * same state and are close together (a nearby lat/lon, or coordinates unknown
+ * for one of them). The first row wins for every scalar field; a blank in the
+ * winner is filled from the loser. A same-name row in a *different* state (e.g.
+ * Richmond NSW vs Richmond VIC) stays separate, and a same-name row far away is
+ * dropped with a log line so a place-list slug never collides downstream.
+ *
+ * @param {Array} rows
+ * @param {{nearKm?:number, coords?:Map<string,{lat:number,lon:number}>}} [opts]
+ */
+function mergePlaces(rows, { nearKm = DEFAULTS.placeMergeKm, coords = null } = {}) {
   const out = [];
+  const bySlug = new Map();
+  const pointOf = (row) => {
+    if (Number.isFinite(row.lat) && Number.isFinite(row.lon)) return { lat: row.lat, lon: row.lon };
+    return (coords && coords.get(row.slug)) || null;
+  };
   for (const row of rows) {
-    // The wiki cache already keys by slug; a locality CSV is slugged from name.
     const slug = row.slug ? String(row.slug).toLowerCase() : lib.slugify(row.name);
-    if (!slug || seen.has(slug)) {
-      if (slug) log(`place list: dropping duplicate slug "${slug}" (${row.name})`);
+    if (!slug) {
+      log('place list: dropping a row with no usable name');
       continue;
     }
-    seen.add(slug);
-    out.push({ ...row, slug });
+    // The key is name+state: the same name in a *different* state is a
+    // genuinely different place (Richmond NSW vs Richmond VIC).
+    const key = `${slug}\u0000${String(row.state || '').toLowerCase()}`;
+    const existing = bySlug.get(key);
+    if (!existing) {
+      const copy = { ...row, slug };
+      bySlug.set(key, copy);
+      out.push(copy);
+      continue;
+    }
+    const a = pointOf(existing);
+    const b = pointOf(row);
+    // Unknown coordinates never block a merge; known ones must be close.
+    const near = !a || !b || lib.haversineKm(a, b) <= nearKm;
+    if (near) {
+      for (const field of ['lga', 'county', 'postcode']) {
+        if (!existing[field] && row[field]) existing[field] = row[field];
+      }
+      log(`merge: "${slug}" (${existing.name}) <- ${row.name}`);
+    } else {
+      log(`place list: dropping duplicate slug "${slug}" (${row.name})`);
+    }
   }
   return out;
+}
+
+/** Escape a literal string for use inside a RegExp. */
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Does `word` appear in `text` as a whole word (letters/digits are boundaries)? */
+function hasWord(text, word) {
+  if (!word) return false;
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(word)}([^a-z0-9]|$)`, 'i').test(String(text));
+}
+
+/** Is `name` a postcode-only or PO-Box style non-place? */
+function poBoxOrPostcode(name) {
+  const n = String(name || '').trim();
+  if (/^\d{3,4}$/.test(n)) return 'postcode-only';
+  if (/\bP\.?\s?O\.?\s*Box\b/i.test(n)) return 'po box';
+  if (/^GPO\s*Box\b/i.test(n)) return 'po box';
+  return null;
+}
+
+/**
+ * Drop non-places from the scoped place list.
+ *
+ * Two kinds are skipped:
+ *   - a postcode-only name ("3000") or a PO-Box style name (always);
+ *   - any name containing a deny word ("Centre", "GPO", "Wharf", ...) *when*
+ *     it shares a postcode with a real suburb - so a postcode that only ever
+ *     names, say, "World Trade Centre" is kept rather than silently emptied.
+ *
+ * `--places-allow` names/words are never skipped and count as real suburbs;
+ * `--places-deny` adds to the built-in list.
+ *
+ * @param {Array} rows
+ * @param {{deny?:string[], allow?:string[]}} [opts]
+ */
+function skipNonPlaces(rows, { deny = [], allow = [] } = {}) {
+  const denyWords = DEFAULT_DENY_WORDS.concat(deny.map((w) => String(w).trim().toLowerCase()).filter(Boolean));
+  const allowList = allow.map((w) => String(w).trim().toLowerCase()).filter(Boolean);
+  const isAllowed = (name) => allowList.some((a) => String(name).toLowerCase() === a || hasWord(name, a));
+  const reasonOf = (row) => {
+    const poBox = poBoxOrPostcode(row.name);
+    if (poBox) return poBox;
+    const word = denyWords.find((w) => hasWord(row.name, w));
+    return word ? `deny:${word}` : null;
+  };
+
+  // A postcode is "real" when it holds at least one place we are NOT denying.
+  const realPostcodes = new Set();
+  for (const row of rows) {
+    if (isAllowed(row.name) || !reasonOf(row)) {
+      if (row.postcode) realPostcodes.add(String(row.postcode));
+    }
+  }
+
+  const out = [];
+  for (const row of rows) {
+    if (isAllowed(row.name)) {
+      out.push(row);
+      continue;
+    }
+    const reason = reasonOf(row);
+    if (!reason) {
+      out.push(row);
+      continue;
+    }
+    const alwaysSkip = reason === 'postcode-only' || reason === 'po box';
+    if (alwaysSkip || (row.postcode && realPostcodes.has(String(row.postcode)))) {
+      log(`skip non-place: "${row.name}" (${reason})`);
+      continue;
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/** The human-readable reason a place ranked where it did (`pop=…, town, wiki`). */
+function rankReasonOf(slug, { pop, towns, extract }) {
+  const reasons = [];
+  const value = pop && pop.get ? pop.get(slug) : undefined;
+  if (Number.isFinite(value) && value > 0) reasons.push(`pop=${value}`);
+  if (towns && towns.has(slug)) reasons.push('town');
+  if (extract && extract.has(slug)) reasons.push('wiki');
+  return reasons.length ? reasons.join(', ') : 'suburb';
+}
+
+/**
+ * Rank places by importance, biggest first, so `--limit` keeps real towns
+ * rather than whatever happened to be first in the file.
+ *
+ * Order: population (descending, from `en.pop`) - then a place present in
+ * `towns.tsv` (a real town) beats a suburbs-only name - then a place with a
+ * Wikipedia extract (`ex`) beats one without. File order breaks any remaining
+ * tie, so the result is stable.
+ *
+ * @param {Array} rows
+ * @param {{pop?:Map<string,number>, towns?:Set<string>, extract?:Set<string>}} [opts]
+ */
+function rankPlaces(rows, { pop = new Map(), towns = new Set(), extract = new Set() } = {}) {
+  const popOf = (slug) => {
+    const v = pop && pop.get ? pop.get(slug) : undefined;
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const pa = popOf(a.row.slug);
+      const pb = popOf(b.row.slug);
+      if (pb !== pa) return pb - pa;
+      const ta = towns.has(a.row.slug) ? 1 : 0;
+      const tb = towns.has(b.row.slug) ? 1 : 0;
+      if (tb !== ta) return tb - ta;
+      const ea = extract.has(a.row.slug) ? 1 : 0;
+      const eb = extract.has(b.row.slug) ? 1 : 0;
+      if (eb !== ea) return eb - ea;
+      return a.index - b.index;
+    })
+    .map(({ row }) => ({ ...row, rankReason: rankReasonOf(row.slug, { pop, towns, extract }) }));
 }
 
 // --- Wikipedia / Commons SQLite cache --------------------------------------
@@ -1267,9 +1453,15 @@ function resolveOsmFile(country, state, override) {
  * Read every local cache and assemble the in-memory `--sources` tree. Pure
  * apart from reads (and the optional network fill), so tests can assert on it.
  *
- * Scale rule: the place list is scoped by `--country` / `--state` / `--limit`
- * FIRST; the wiki cache is then looked up only for the places left in scope, so
- * the ~1.2 GB `wd.sqlite` is never walked end to end.
+ * Scale rule: the place list is scoped by `--country` / `--state` FIRST; the
+ * wiki cache is then looked up only for the places left in scope, so the
+ * ~1.2 GB `wd.sqlite` is never walked end to end (every lookup is by key).
+ *
+ * Picking rule: inside the country/state scope the places are cleaned up
+ * (non-places skipped, duplicates merged) and then RANKED by importance -
+ * population, then a real town, then a Wikipedia extract - all *before*
+ * `--limit` is applied. So a trial keeps Melbourne/Geelong/Ballarat rather
+ * than whatever happened to be first in the file.
  */
 async function collect(options) {
   const {
@@ -1282,6 +1474,9 @@ async function collect(options) {
     dryRun = false,
     cacheDir,
     tmpDir,
+    forcedPlaces = null,
+    placesDeny = [],
+    placesAllow = [],
   } = options;
   const deadline = options.deadline || new Deadline(options.maxSeconds || DEFAULTS.maxSeconds);
 
@@ -1300,15 +1495,43 @@ async function collect(options) {
     deadline,
   });
 
-  // 2. Scope BEFORE any heavy read: country, then state, then the trial limit.
+  // 2. Scope BEFORE any heavy read: country, then state. The trial limit is
+  //    NOT applied yet - the places are ranked first (see step 5).
   let scoped = all;
   if (country) scoped = scoped.filter((e) => e.country === country);
   if (state) scoped = scoped.filter((e) => e.state === state);
-  if (limit > 0) scoped = scoped.slice(0, limit);
   log(`scope: ${scoped.length} of ${all.length} place(s) (country=${country} state=${state || 'all'} limit=${limit || '-'})`);
   if (!scoped.length) return empty();
 
-  // 3. Wiki cache: only the scoped places, and only by key lookup (never a scan).
+  // 3. `--places "Geelong,Ballarat,Bendigo"` forces an EXACT list, in the given
+  //    order (a name not in the cache is still kept, with blank fields).
+  const forced = Array.isArray(forcedPlaces) && forcedPlaces.length ? forcedPlaces : null;
+  if (forced) {
+    const bySlug = new Map(scoped.map((e) => [e.slug, e]));
+    scoped = forced.map((raw) => {
+      const name = String(raw).trim();
+      const slug = lib.slugify(name);
+      const found = bySlug.get(slug);
+      return found
+        ? { ...found, rankReason: 'forced' }
+        : {
+            name,
+            slug,
+            state: state || '',
+            country: country || '',
+            lga: '',
+            county: '',
+            postcode: '',
+            lat: null,
+            lon: null,
+            rankReason: 'forced',
+          };
+    });
+    log(`places: forced exact list of ${scoped.length} (--places)`);
+  }
+
+  // 4. Wiki cache: only the scoped places, and only by key lookup (never a scan).
+  //    This runs for the whole state scope so the ranking has real populations.
   const { wiki, coords: dbCoords } = readWikiDb(paths.wikiDb, {
     tables: wikiTables,
     entries: scoped,
@@ -1316,13 +1539,40 @@ async function collect(options) {
     deadline,
   });
 
-  // 4. Coordinates: unique town rows first, the wiki cache as a fallback.
-  //    Uniqueness is computed over the whole state place list (not just the
-  //    limited slice), so a shared postcode centroid is still detected.
+  // 5. Clean up and rank the scoped places (skipped for a forced exact list).
   const townRows = readTownCoords(paths.towns, { state, cols: paths.townsCols, deadline });
   const townBySlug = new Map(townRows.map((r) => [r.slug, r]));
+  if (!forced) {
+    scoped = skipNonPlaces(scoped, { deny: placesDeny, allow: placesAllow });
+    scoped = mergePlaces(scoped, {
+      coords: new Map([...townBySlug].map(([slug, r]) => [slug, { lat: r.lat, lon: r.lon }])),
+    });
+    const pop = new Map();
+    for (const [slug, w] of Object.entries(wiki)) {
+      const value = w && w.population ? Number(w.population.value) : NaN;
+      if (Number.isFinite(value) && value > 0) pop.set(slug, value);
+    }
+    const extract = new Set(Object.keys(wiki).filter((s) => wiki[s] && wiki[s].extract));
+    scoped = rankPlaces(scoped, { pop, towns: new Set(townRows.map((r) => r.slug)), extract });
+  }
+  // Uniqueness is computed over this whole cleaned scope, not just the slice,
+  // so a shared postcode centroid is still detected after --limit.
+  const rankedScope = scoped;
+  if (limit > 0) scoped = scoped.slice(0, limit);
+  if (!scoped.length) return empty();
+
+  // Keep the wiki output to the chosen places (ranking looked up more of them).
+  const chosen = new Set(scoped.map((e) => e.slug));
+  for (const slug of Object.keys(wiki)) if (!chosen.has(slug)) delete wiki[slug];
+
+  if (dryRun) {
+    log(`chosen ${scoped.length} place(s) (rank reason in [ ]):`);
+    for (const e of scoped) log(`  - ${e.name} (${e.state || country}) [${e.rankReason || 'suburb'}]`);
+  }
+
+  // 6. Coordinates: unique town rows first, the wiki cache as a fallback.
   const coordRows = [];
-  for (const entry of all) {
+  for (const entry of rankedScope) {
     const row = townBySlug.get(entry.slug);
     const fromDb = dbCoords.get(entry.slug);
     const lat = row ? row.lat : fromDb ? fromDb.lat : null;
@@ -1335,9 +1585,9 @@ async function collect(options) {
   const coords = new Map(towns.filter((t) => t.unique).map((t) => [t.slug, { lat: t.lat, lon: t.lon }]));
   log(`coords: ${towns.length} town(s), ${coords.size} unique coordinate(s)`);
 
-  // 5. Places: the local place-name TSV plus OSM POIs clipped with osmium.
+  // 7. Places: the local place-name TSV plus OSM POIs clipped with osmium.
   //    The clip is the one heavy step, so a --dry-run trial skips it.
-  const places = { ...readPlaceNames(paths.places, { entries: scoped, cols: paths.placesCols, deadline }) };
+  const places = { ...readPlaceNames(paths.placesFile, { entries: scoped, cols: paths.placesCols, deadline }) };
   if (dryRun) {
     log('osm: skipped in dry-run');
   } else {
@@ -1467,12 +1717,14 @@ async function main(argv = process.argv.slice(2)) {
   const dryRun = Boolean(args.dryRun);
   const allowNetwork = Boolean(args.allowNetwork);
 
+  const list = (value) => (value ? String(value).split(',').map((s) => s.trim()).filter(Boolean) : []);
+
   const paths = {
     suburbs: args.suburbs !== undefined ? args.suburbs : defaults.suburbs,
     suburbsCols: args.suburbsCols || process.env.AREAS_SUBURBS_COLS || null,
     towns: args.towns || HOST.towns,
     townsCols: args.townsCols || process.env.AREAS_TOWNS_COLS || null,
-    places: args.places || HOST.places,
+    placesFile: args.placesFile || HOST.places,
     placesCols: args.placesCols || process.env.AREAS_PLACES_COLS || null,
     wikiDb: args.wikiDb || HOST.wikiDb,
     wikiSlugColumn: args.wikiSlugColumn || null,
@@ -1482,6 +1734,9 @@ async function main(argv = process.argv.slice(2)) {
     listingsTable: args.listingsTable || process.env.AREAS_LISTINGS_TABLE || 'listings',
     census: args.census || null,
   };
+  const forcedPlaces = list(args.places);
+  const placesDeny = list(args.placesDeny).length ? list(args.placesDeny) : list(process.env.AREAS_PLACES_DENY);
+  const placesAllow = list(args.placesAllow).length ? list(args.placesAllow) : list(process.env.AREAS_PLACES_ALLOW);
   const wikiTables = args.wikiTables ? String(args.wikiTables).split(',').filter(Boolean) : HOST.wikiTables.split(',');
 
   log(`start country=${country} state=${state || 'all'} out=${outDir} max=${maxSeconds}s network=${allowNetwork ? 'on' : 'off'}${dryRun ? ' dry-run' : ''}`);
@@ -1498,7 +1753,21 @@ async function main(argv = process.argv.slice(2)) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'areas-prepare-'));
   let sources;
   try {
-    sources = await collect({ country, state, limit, paths, wikiTables, allowNetwork, dryRun, cacheDir, tmpDir, deadline });
+    sources = await collect({
+      country,
+      state,
+      limit,
+      paths,
+      wikiTables,
+      allowNetwork,
+      dryRun,
+      cacheDir,
+      tmpDir,
+      deadline,
+      forcedPlaces,
+      placesDeny,
+      placesAllow,
+    });
   } catch (err) {
     if (err instanceof TimeBudgetError) {
       log(`stopping: ${err.message} (nothing written)`);
@@ -1546,6 +1815,11 @@ module.exports = {
   detectColumn,
   resolveColumns,
   computeUniqueCoords,
+  mergePlaces,
+  skipNonPlaces,
+  rankPlaces,
+  rankReasonOf,
+  DEFAULT_DENY_WORDS,
   readSuburbs,
   readTownCoords,
   readWikiDb,

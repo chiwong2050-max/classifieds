@@ -149,7 +149,7 @@ const FIXTURE_ARGS = (extra = []) => [
   '--suburbs', path.join(FIX, 'ap_suburbs.csv'),
   '--suburbs-cols', 'name,state,postcode,lga',
   '--towns', path.join(FIX, 'towns.tsv'),
-  '--places', path.join(FIX, 'places.tsv'),
+  '--places-file', path.join(FIX, 'places.tsv'),
   '--places-cols', 'slug,name',
   '--wiki-db', makeWikiDb(),
   ...extra,
@@ -352,23 +352,163 @@ test('area prepare step', async (t) => {
     assert.ok(logs.some((l) => l.includes('skipping listings')), 'a clear skip line is logged');
   });
 
-  await t.test('scopes country/state/limit BEFORE the wiki lookup', async () => {
+  await t.test('scopes country/state BEFORE the wiki lookup, then ranks before --limit', async () => {
     const outDir = path.join(TMP, 'scope-dry');
     let result;
     const logs = await captureLogsAsync(async () => {
       result = await prepare.main(FIXTURE_ARGS(['--limit', '2', '--dry-run', '--out', outDir]));
     });
-    assert.equal(result.sources.areas.length, 2, 'the limit is applied to the place list');
+    assert.equal(result.sources.areas.length, 2, 'the limit is applied to the ranked list');
     assert.deepEqual(
       result.sources.areas.map((a) => a.slug),
       ['newcastle', 'maitland']
     );
-    // Only the two in-scope places were looked up in the cache.
-    assert.deepEqual(Object.keys(result.sources.wiki).sort(), ['maitland', 'newcastle']);
+    // The whole state scope is looked up (ranking needs every population), but
+    // the written wiki is trimmed back to the two chosen places.
     assert.ok(
-      logs.some((l) => l.includes('matched 2 of 2 place(s) in scope')),
-      'the wiki cache is queried for the scoped places only'
+      logs.some((l) => l.includes('matched 3 of 5 place(s) in scope')),
+      'the wiki cache is queried for the state-scoped places only (never a full scan)'
     );
+    assert.deepEqual(Object.keys(result.sources.wiki).sort(), ['maitland', 'newcastle']);
+  });
+
+  await t.test('rankPlaces orders by population, then town, then wiki', () => {
+    const rows = [
+      { slug: 'stkilda', name: 'St Kilda' }, // wiki only
+      { slug: 'smalltown', name: 'Smalltown' }, // real town, no population
+      { slug: 'geelong', name: 'Geelong' }, // population + town
+      { slug: 'melbourne', name: 'Melbourne' }, // biggest population
+    ];
+    const ranked = prepare.rankPlaces(rows, {
+      pop: new Map([
+        ['melbourne', 5000000],
+        ['geelong', 280000],
+      ]),
+      towns: new Set(['melbourne', 'geelong', 'smalltown']),
+      extract: new Set(['melbourne', 'geelong', 'stkilda']),
+    });
+    assert.deepEqual(
+      ranked.map((r) => r.slug),
+      ['melbourne', 'geelong', 'smalltown', 'stkilda'],
+      'population, then real town, then a wiki extract'
+    );
+    assert.equal(ranked[0].rankReason, 'pop=5000000, town, wiki');
+    assert.equal(ranked[2].rankReason, 'town');
+    assert.equal(ranked[3].rankReason, 'wiki');
+
+    // Stable: with nothing to separate them, file order is kept.
+    const tied = prepare.rankPlaces([{ slug: 'b', name: 'B' }, { slug: 'a', name: 'A' }]);
+    assert.deepEqual(tied.map((r) => r.slug), ['b', 'a']);
+    assert.equal(tied[0].rankReason, 'suburb');
+  });
+
+  await t.test('ranking beats file order inside collect (a late big town wins --limit)', async () => {
+    // Only Sydney (last in the file) has a population, so ranking must pull it
+    // to the front; without ranking, --limit 1 would pick Newcastle.
+    const file = path.join(TMP, 'wd-rank.sqlite');
+    fs.rmSync(file, { force: true });
+    const db = new Database(file);
+    db.exec('CREATE TABLE en (title TEXT, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+    db.prepare('INSERT INTO en VALUES (?,?,?,?,?)').run(
+      'Sydney, New South Wales',
+      'Sydney is the capital of New South Wales and the most populous city in Australia.',
+      5300000,
+      2021,
+      null
+    );
+    db.close();
+
+    let result;
+    const logs = await captureLogsAsync(async () => {
+      result = await prepare.main(
+        FIXTURE_ARGS(['--wiki-db', file, '--limit', '1', '--dry-run', '--out', path.join(TMP, 'rank-dry')])
+      );
+    });
+    assert.deepEqual(result.sources.areas.map((a) => a.slug), ['sydney']);
+    assert.ok(logs.some((l) => l.includes('pop=5300000')), 'the rank reason is logged in dry-run');
+  });
+
+  await t.test('skipNonPlaces drops postcode-only, PO-Box and deny-word rows', () => {
+    const rows = [
+      { name: 'Melbourne', slug: 'melbourne', state: 'vic', postcode: '3000' },
+      { name: 'World Trade Centre', slug: 'world-trade-centre', state: 'vic', postcode: '3000' },
+      { name: 'St Kilda', slug: 'st-kilda', state: 'vic', postcode: '3004' },
+      { name: 'St Kilda Road Central', slug: 'st-kilda-road-central', state: 'vic', postcode: '3004' },
+      { name: 'PO Box 12', slug: 'po-box-12', state: 'vic', postcode: '3000' },
+      { name: '2000', slug: '2000', state: 'vic', postcode: '2000' },
+      { name: 'Lonely Centre', slug: 'lonely-centre', state: 'vic', postcode: '9999' },
+    ];
+    let kept;
+    captureLogs(() => {
+      kept = prepare.skipNonPlaces(rows);
+    });
+    assert.deepEqual(
+      kept.map((r) => r.name),
+      ['Melbourne', 'St Kilda', 'Lonely Centre'],
+      'deny words are skipped only when they share a postcode with a real suburb'
+    );
+
+    // --places-deny extends the built-in list.
+    const denied = prepare.skipNonPlaces(
+      [
+        { name: 'Melbourne', postcode: '3000' },
+        { name: 'Marvel Stadium', postcode: '3000' },
+      ],
+      { deny: ['stadium'] }
+    );
+    assert.deepEqual(denied.map((r) => r.name), ['Melbourne']);
+
+    // --places-allow overrides the deny-list.
+    const allowed = prepare.skipNonPlaces(
+      [
+        { name: 'Melbourne', postcode: '3000' },
+        { name: 'Melbourne Central', postcode: '3000' },
+      ],
+      { allow: ['central'] }
+    );
+    assert.deepEqual(allowed.map((r) => r.name), ['Melbourne', 'Melbourne Central']);
+  });
+
+  await t.test('mergePlaces merges same name+state nearby, keeps other states', () => {
+    const rows = [
+      { name: 'Richmond', slug: 'richmond', state: 'nsw', lat: -33.6, lon: 150.7, lga: 'Hawkesbury' },
+      { name: 'Richmond', slug: 'richmond', state: 'vic', lat: -37.8, lon: 145.0, lga: 'Yarra' },
+      { name: 'Cessnock', slug: 'cessnock', state: 'nsw', lat: -32.83, lon: 151.35, postcode: '2325' },
+      { name: 'Cessnock', slug: 'cessnock', state: 'nsw', lat: -32.835, lon: 151.355, postcode: '2326' },
+    ];
+    const merged = prepare.mergePlaces(rows);
+    assert.equal(merged.length, 3, 'the nearby Cessnock rows merge; the two Richmonds stay');
+    assert.deepEqual(
+      merged.map((r) => `${r.slug}/${r.state}`),
+      ['richmond/nsw', 'richmond/vic', 'cessnock/nsw']
+    );
+    assert.equal(merged[2].postcode, '2325', 'the first row wins for a scalar field');
+
+    // Same name + same state but far apart: keep the first, log the drop.
+    let dropped;
+    captureLogs(() => {
+      dropped = prepare.mergePlaces([
+        { name: 'Springfield', slug: 'springfield', state: 'qld', lat: -27.6, lon: 152.9, lga: 'Ipswich' },
+        { name: 'Springfield', slug: 'springfield', state: 'qld', lat: -19.3, lon: 146.8, lga: 'Townsville' },
+      ]);
+    });
+    assert.equal(dropped.length, 1);
+    assert.equal(dropped[0].lga, 'Ipswich');
+  });
+
+  await t.test('--places forces an exact list in the given order', async () => {
+    const outDir = path.join(TMP, 'forced-dry');
+    let result;
+    const logs = await captureLogsAsync(async () => {
+      result = await prepare.main(FIXTURE_ARGS(['--places', 'Sydney,Maitland', '--dry-run', '--out', outDir]));
+    });
+    assert.deepEqual(
+      result.sources.areas.map((a) => a.slug),
+      ['sydney', 'maitland'],
+      'the forced order is preserved (no ranking)'
+    );
+    assert.ok(logs.some((l) => l.includes('forced exact list')), 'the forced list is logged');
+    assert.ok(logs.some((l) => l.includes('[forced]')), 'each chosen place shows "forced" as its reason');
   });
 
   await t.test('dry-run computes the tree but writes nothing', async () => {
