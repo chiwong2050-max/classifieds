@@ -17,7 +17,8 @@
  *   - a place-name file with no type column defaults every row to "place";
  *   - the ~1.2 GB wiki cache is read by key (en/ex/pop/py/img + ph/file,data),
  *     never full-scanned;
- *   - `--country` / `--state` / `--limit` are applied *before* the wiki lookup;
+ *   - `--country` / `--state` scope the places; a cheap pre-rank plus ONE
+ *     batched population join pick the biggest towns before `--limit`;
  *   - a missing place list fails loudly instead of walking the whole cache;
  *   - `--max-seconds` and per-10,000-row progress logs bound a run;
  *   - the directory listings are optional/pluggable (a MySQL DSN from an env
@@ -363,11 +364,19 @@ test('area prepare step', async (t) => {
       result.sources.areas.map((a) => a.slug),
       ['newcastle', 'maitland']
     );
-    // The whole state scope is looked up (ranking needs every population), but
-    // the written wiki is trimmed back to the two chosen places.
+    // The candidates are pre-ranked, then only that head is given ONE batched
+    // population join; the full wiki rows are read back for the chosen two.
     assert.ok(
-      logs.some((l) => l.includes('matched 3 of 5 place(s) in scope')),
-      'the wiki cache is queried for the state-scoped places only (never a full scan)'
+      logs.some((l) => l.includes('rank pool: 5 of 5 candidate(s)')),
+      'only the pre-ranked head of the scope is looked up'
+    );
+    assert.ok(
+      logs.some((l) => l.includes('wiki-batch:') && l.includes('3 matched')),
+      'the population lookup is a single batched join'
+    );
+    assert.ok(
+      logs.some((l) => l.includes('wiki: matched 2 of 2 place(s) in scope')),
+      'the full wiki rows are read for the chosen places only (never a full scan)'
     );
     assert.deepEqual(Object.keys(result.sources.wiki).sort(), ['maitland', 'newcastle']);
   });
@@ -426,6 +435,115 @@ test('area prepare step', async (t) => {
     });
     assert.deepEqual(result.sources.areas.map((a) => a.slug), ['sydney']);
     assert.ok(logs.some((l) => l.includes('pop=5300000')), 'the rank reason is logged in dry-run');
+  });
+
+  await t.test('lookupWikiBatch reads populations in ONE join and never writes to the cache', () => {
+    const file = path.join(TMP, 'wd-batch.sqlite');
+    fs.rmSync(file, { force: true });
+    const db = new Database(file);
+    db.exec('CREATE TABLE en (title TEXT PRIMARY KEY, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+    const ins = db.prepare('INSERT INTO en VALUES (?,?,?,?,?)');
+    ins.run('Melbourne', 'Melbourne is the capital of Victoria.', 5000000, 2021, null);
+    ins.run('Geelong, Victoria', 'Geelong is a port city in Victoria.', 280000, 2021, null);
+    ins.run('Ballarat, Victoria', 'Ballarat is a city in Victoria.', 110000, 2021, null);
+    ins.run('Somewhere Else, Victoria', 'Not a candidate.', 999, 2021, null);
+    db.close();
+
+    const { pop, extract } = prepare.lookupWikiBatch(file, {
+      entries: [
+        { slug: 'melbourne', name: 'Melbourne' },
+        { slug: 'geelong', name: 'Geelong' },
+        { slug: 'ballarat', name: 'Ballarat' },
+        { slug: 'bendigo', name: 'Bendigo' }, // no cache row
+      ],
+      stateFull: 'Victoria',
+    });
+    assert.equal(pop.get('melbourne'), 5000000, 'a bare title matches by name');
+    assert.equal(pop.get('geelong'), 280000, 'a "Name, State" title matches the variant');
+    assert.equal(pop.get('ballarat'), 110000);
+    assert.equal(pop.has('bendigo'), false, 'a missing row is never invented');
+    assert.equal(pop.has('somewhere-else'), false, 'only candidates are looked up');
+    assert.ok(extract.has('geelong'), 'the extract doubles as the ranking tie-break');
+
+    // The batch stages its titles in a TEMP table only; the cache file itself
+    // is untouched and gains no index or table.
+    const check = new Database(file, { readonly: true });
+    const tables = check
+      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+      .all()
+      .map((r) => r.name);
+    check.close();
+    assert.deepEqual(tables, ['en'], 'the batched join never writes to wd.sqlite');
+  });
+
+  await t.test('--rank-pool bounds the population lookup (a big town past the pool cannot win)', async () => {
+    const file = path.join(TMP, 'wd-pool.sqlite');
+    fs.rmSync(file, { force: true });
+    const db = new Database(file);
+    db.exec('CREATE TABLE en (title TEXT PRIMARY KEY, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+    const ins = db.prepare('INSERT INTO en VALUES (?,?,?,?,?)');
+    ins.run('Newcastle, New South Wales', 'Newcastle.', 100, 2021, null);
+    ins.run('Maitland, New South Wales', 'Maitland.', 200, 2021, null);
+    ins.run('Sydney, New South Wales', 'Sydney.', 5300000, 2021, null);
+    db.close();
+
+    let result;
+    const logs = await captureLogsAsync(async () => {
+      result = await prepare.main(
+        FIXTURE_ARGS([
+          '--wiki-db', file, '--rank-pool', '2', '--limit', '1',
+          '--dry-run', '--out', path.join(TMP, 'pool-dry'),
+        ])
+      );
+    });
+    assert.ok(
+      logs.some((l) => l.includes('rank pool: 2 of 5 candidate(s)')),
+      'only the top of the pre-ranked list is looked up'
+    );
+    // Sydney has the biggest population but is last in file order, past the
+    // pool, so it never gets a lookup and cannot win; Maitland is the bigger
+    // of the two towns that were actually looked up.
+    assert.deepEqual(result.sources.areas.map((a) => a.slug), ['maitland']);
+  });
+
+  await t.test('skipNonPlaces runs BEFORE ranking (a junk name cannot take a slot)', async () => {
+    const suburbs = tempFile(
+      'ap_suburbs.csv',
+      'Melbourne Central,VIC,3000,City of Melbourne\nMelbourne,VIC,3000,City of Melbourne\n'
+    );
+    const towns = tempFile('towns.tsv', '1\tMelbourne\tVIC\t-37.8136\t144.9631\n');
+    const wikiFile = path.join(TMP, 'wd-skip.sqlite');
+    fs.rmSync(wikiFile, { force: true });
+    const db = new Database(wikiFile);
+    db.exec('CREATE TABLE en (title TEXT PRIMARY KEY, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+    db.exec('CREATE TABLE ph (file TEXT, data TEXT)');
+    const ins = db.prepare('INSERT INTO en VALUES (?,?,?,?,?)');
+    // The junk name has the biggest population, so if the skip ran *after* the
+    // rank it would win --limit 1; skipping first drops it before it is ranked.
+    ins.run('Melbourne Central, Victoria', 'A shopping centre.', 9999999, 2021, null);
+    ins.run('Melbourne, Victoria', 'Melbourne is the capital of Victoria.', 5000000, 2021, null);
+    db.close();
+
+    let result;
+    const logs = await captureLogsAsync(async () => {
+      result = await prepare.main([
+        '--country', 'au', '--state', 'vic',
+        '--suburbs', suburbs, '--suburbs-cols', 'name,state,postcode,lga',
+        '--towns', towns,
+        '--places-file', path.join(FIX, 'places.tsv'), '--places-cols', 'slug,name',
+        '--wiki-db', wikiFile,
+        '--limit', '1', '--dry-run', '--out', path.join(TMP, 'skip-dry'),
+      ]);
+    });
+    assert.ok(
+      logs.some((l) => l.includes('skip non-place: "Melbourne Central"')),
+      'the junk name is skipped first'
+    );
+    assert.deepEqual(
+      result.sources.areas.map((a) => a.slug),
+      ['melbourne'],
+      'the junk never reaches the rank, so it cannot take the slot'
+    );
   });
 
   await t.test('skipNonPlaces drops postcode-only, PO-Box and deny-word rows', () => {

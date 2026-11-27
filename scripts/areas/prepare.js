@@ -51,6 +51,7 @@
  *   --state <slug>        state/territory slug (default: whole country)
  *   --out <dir>           sources tree to write      (default data/areas-src)
  *   --limit <n>           cap the number of places    (trials)
+ *   --rank-pool <n>       top candidates given a population lookup (default 500)
  *   --dry-run             compute + log, write nothing
  *   --max-seconds <n>     hard time budget            (default 300)
  *   --allow-network       last-resort rate-limited Wikipedia fill (off)
@@ -85,6 +86,7 @@ const Database = require('better-sqlite3');
 
 const lib = require('./lib');
 const network = require('./network');
+const REGIONS = require('../../src/config/regions');
 
 const ROOT = path.resolve(__dirname, '../..');
 const LOAD_GATE = '/usr/local/bin/main-ok.sh';
@@ -100,6 +102,9 @@ const DEFAULTS = {
   progressEvery: 10000,
   // Same-name places closer than this (km) are merged into one place.
   placeMergeKm: 5,
+  // Only this many top candidates get a (batched) population lookup, so a
+  // trial run stays quick while still finding the biggest towns.
+  rankPool: 500,
 };
 
 /**
@@ -380,6 +385,7 @@ function printHelp() {
       '  --state <slug>        state/territory slug (default: whole country)',
       `  --out <dir>           sources tree        (default ${DEFAULTS.out})`,
       '  --limit <n>           cap the number of places (trials)',
+      `  --rank-pool <n>       top candidates given a population lookup (default ${DEFAULTS.rankPool})`,
       '  --dry-run             compute + log, write nothing',
       `  --max-seconds <n>     hard time budget    (default ${DEFAULTS.maxSeconds})`,
       '  --allow-network       last-resort rate-limited Wikipedia fill (off)',
@@ -671,6 +677,60 @@ function rankPlaces(rows, { pop = new Map(), towns = new Set(), extract = new Se
     .map(({ row }) => ({ ...row, rankReason: rankReasonOf(row.slug, { pop, towns, extract }) }));
 }
 
+/**
+ * Cheap pre-rank: real towns (`towns.tsv`) first, then the rest, keeping file
+ * order inside each group. Only the head of this list is given a population
+ * lookup, so a `--limit 8` run does a handful of work rather than thousands.
+ */
+function preRankPlaces(rows, { towns = new Set() } = {}) {
+  return rows
+    .map((row, index) => ({ row, index, town: towns.has(row.slug) ? 1 : 0 }))
+    .sort((a, b) => b.town - a.town || a.index - b.index)
+    .map(({ row }) => row);
+}
+
+/** Full region name for a state slug (e.g. au/vic -> "Victoria"), else ''. */
+function stateFullName(country, state) {
+  if (!state) return '';
+  const byCountry = REGIONS[String(country || '').toLowerCase()];
+  const found = byCountry && byCountry[String(state).toLowerCase()];
+  return found ? found.name : '';
+}
+
+/** Log how long a step took, then return its result. */
+function timed(label, fn) {
+  const started = Date.now();
+  const result = fn();
+  log(`${label}: ${Date.now() - started} ms`);
+  return result;
+}
+
+/**
+ * Exact page-title variants for a place. These are matched by *equality* so the
+ * cache's own index on the title column is used; the case-preserving forms come
+ * first (the real cache is case-sensitive) with lowercased forms as insurance.
+ */
+function nameVariants(name, stateFull) {
+  const base = String(name || '').trim();
+  if (!base) return [];
+  const forms = [base];
+  if (stateFull) {
+    forms.push(`${base}, ${stateFull}`);
+    forms.push(`${base} (${stateFull})`);
+  }
+  const seen = new Set();
+  const out = [];
+  for (const form of forms) {
+    for (const value of [form, form.toLowerCase()]) {
+      if (!seen.has(value)) {
+        seen.add(value);
+        out.push(value);
+      }
+    }
+  }
+  return out;
+}
+
 // --- Wikipedia / Commons SQLite cache --------------------------------------
 
 /**
@@ -890,6 +950,107 @@ function readWikiDb(file, { tables, entries, slugColumn, deadline, progressEvery
     db.close();
   }
   return { wiki, coords };
+}
+
+/**
+ * Batched population + extract lookup: ONE join, never one query per place.
+ *
+ * `readWikiDb` looks a place up one title at a time, which on the real cache
+ * (a ~1.38M-row `en` table whose only index is the automatic one on `title`)
+ * was far too slow for a whole state. Here, instead:
+ *
+ *   - the cache is opened READ-ONLY (nothing is ever written to it and no
+ *     index is created in it - only the connection's TEMP store is used);
+ *   - each candidate's page titles are staged in a TEMP table - the name, its
+ *     "Name, State" and "Name (State)" variants, in original case and
+ *     lowercased, so a case-sensitive title column still matches;
+ *   - ONE `JOIN` probes `en` by title *equality*, so it uses the cache's own
+ *     index on `title` and never scans the table.
+ *
+ * @returns {{ pop: Map<string,number>, extract: Set<string> }}
+ */
+function lookupWikiBatch(file, { entries, stateFull = '', deadline } = {}) {
+  const pop = new Map();
+  const extract = new Set();
+  if (!file || !fs.existsSync(file)) {
+    log(`wiki-batch: ${file || '(unset)'} not found; skipping`);
+    return { pop, extract };
+  }
+  const rows = entries || [];
+  if (!rows.length) {
+    log('wiki-batch: no candidates; skipping');
+    return { pop, extract };
+  }
+  let db;
+  try {
+    db = new Database(file, { readonly: true, fileMustExist: true });
+  } catch (err) {
+    log(`wiki-batch: cannot open ${file}: ${err.message}; skipping`);
+    return { pop, extract };
+  }
+  try {
+    const present = new Set(
+      db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view')").all().map((r) => r.name)
+    );
+    if (!present.has('en')) {
+      log('wiki-batch: table "en" not present; skipping');
+      return { pop, extract };
+    }
+    const cols = db.prepare(`PRAGMA table_info(${quoteIdent('en')})`).all().map((c) => c.name);
+    const map = wikiColumns(cols, 'en');
+    const titleCol = map.title;
+    if (!titleCol) {
+      log('wiki-batch: table "en" has no title column; skipping');
+      return { pop, extract };
+    }
+    const popCol = map.popValue;
+    const yearCol = map.popYear;
+    const exCol = map.extract;
+
+    // Stage the candidate titles in a TEMP table, then join once. The TEMP
+    // store lives beside the read-only file, so the cache itself is untouched.
+    db.exec('CREATE TEMP TABLE wanted (title TEXT, slug TEXT)');
+    const insert = db.prepare('INSERT INTO wanted (title, slug) VALUES (?, ?)');
+    const pairs = [];
+    for (const entry of rows) {
+      for (const title of nameVariants(entry.name, stateFull)) pairs.push({ title, slug: entry.slug });
+    }
+    db.transaction((batch) => {
+      for (const pair of batch) insert.run(pair.title, pair.slug);
+    })(pairs);
+
+    const q = quoteIdent;
+    const sql =
+      `SELECT w.${q('slug')} AS slug,` +
+      ` ${popCol ? `e.${q(popCol)}` : 'NULL'} AS pop,` +
+      ` ${yearCol ? `e.${q(yearCol)}` : 'NULL'} AS py,` +
+      ` ${exCol ? `e.${q(exCol)}` : 'NULL'} AS ex` +
+      ` FROM wanted w JOIN ${q('en')} e ON e.${q(titleCol)} = w.${q('title')}`;
+
+    if (deadline) deadline.guard();
+    const matched = db.prepare(sql).all();
+    const hit = new Set();
+    for (const row of matched) {
+      const value = Number(row.pop);
+      const year = Number(row.py);
+      const yearOk = !yearCol || (Number.isFinite(year) && year > 0);
+      if (Number.isFinite(value) && value > 0 && yearOk) {
+        const seen = pop.get(row.slug);
+        if (seen === undefined || value > seen) pop.set(row.slug, value);
+      }
+      if (row.ex !== null && row.ex !== undefined && String(row.ex).trim()) extract.add(row.slug);
+      hit.add(row.slug);
+    }
+    log(
+      `wiki-batch: ${rows.length} candidate(s) -> ${hit.size} matched` +
+        ` via ${pairs.length} staged title(s) (${pop.size} with population)`
+    );
+  } catch (err) {
+    log(`wiki-batch: lookup failed (${err.message}); skipping`);
+  } finally {
+    db.close();
+  }
+  return { pop, extract };
 }
 
 // --- Town coordinates ------------------------------------------------------
@@ -1454,14 +1615,16 @@ function resolveOsmFile(country, state, override) {
  * apart from reads (and the optional network fill), so tests can assert on it.
  *
  * Scale rule: the place list is scoped by `--country` / `--state` FIRST; the
- * wiki cache is then looked up only for the places left in scope, so the
- * ~1.2 GB `wd.sqlite` is never walked end to end (every lookup is by key).
+ * wiki cache is then probed only for the places left in scope, and only by
+ * key, so the ~1.38M-row `wd.sqlite` is never walked end to end.
  *
  * Picking rule: inside the country/state scope the places are cleaned up
- * (non-places skipped, duplicates merged) and then RANKED by importance -
- * population, then a real town, then a Wikipedia extract - all *before*
- * `--limit` is applied. So a trial keeps Melbourne/Geelong/Ballarat rather
- * than whatever happened to be first in the file.
+ * (non-places skipped, duplicates merged) and then pre-ranked cheaply (real
+ * towns first). Only the head of that list - `--rank-pool`, 500 by default -
+ * is given a population lookup, which is ONE batched join rather than a query
+ * per place. The head is then ranked by importance - population, then a real
+ * town, then a Wikipedia extract - all *before* `--limit` is applied, so a
+ * trial keeps Melbourne/Geelong/Ballarat rather than whatever came first.
  */
 async function collect(options) {
   const {
@@ -1477,6 +1640,7 @@ async function collect(options) {
     forcedPlaces = null,
     placesDeny = [],
     placesAllow = [],
+    rankPool = DEFAULTS.rankPool,
   } = options;
   const deadline = options.deadline || new Deadline(options.maxSeconds || DEFAULTS.maxSeconds);
 
@@ -1530,8 +1694,52 @@ async function collect(options) {
     log(`places: forced exact list of ${scoped.length} (--places)`);
   }
 
-  // 4. Wiki cache: only the scoped places, and only by key lookup (never a scan).
-  //    This runs for the whole state scope so the ranking has real populations.
+  // 4. Town coordinates: the cheap pre-rank (a real town beats a suburb-only
+  //    name) and dedupe proximity both need them; the file is small.
+  const townRows = readTownCoords(paths.towns, { state, cols: paths.townsCols, deadline });
+  const townBySlug = new Map(townRows.map((r) => [r.slug, r]));
+  const townSlugs = new Set(townRows.map((r) => r.slug));
+
+  // 5. Clean up and pre-rank BEFORE any heavy read: the junk names go first,
+  //    duplicates merge, and real towns sort ahead of suburbs. A forced list
+  //    skips all of this and keeps its given order.
+  let rankedScope = scoped;
+  if (!forced) {
+    scoped = timed('skip', () => skipNonPlaces(scoped, { deny: placesDeny, allow: placesAllow }));
+    scoped = timed('dedupe', () =>
+      mergePlaces(scoped, {
+        coords: new Map([...townBySlug].map(([slug, r]) => [slug, { lat: r.lat, lon: r.lon }])),
+      })
+    );
+    rankedScope = timed('pre-rank', () => preRankPlaces(scoped, { towns: townSlugs }));
+  }
+
+  // 6. Populations for the HEAD of the pre-ranked list only, in ONE batched
+  //    join (never a query per place). Everything past `--rank-pool` keeps its
+  //    pre-rank order, so a `--limit 8` trial stays quick.
+  const poolSize = Number.isFinite(rankPool) && rankPool > 0 ? rankPool : rankedScope.length;
+  const pool = forced ? [] : rankedScope.slice(0, poolSize);
+  if (!forced) log(`rank pool: ${pool.length} of ${rankedScope.length} candidate(s)`);
+  const { pop, extract } = pool.length
+    ? timed('wiki join', () =>
+        lookupWikiBatch(paths.wikiDb, { entries: pool, stateFull: stateFullName(country, state), deadline })
+      )
+    : { pop: new Map(), extract: new Set() };
+
+  // 7. Rank by importance (population, then a real town, then an extract) and
+  //    only then apply `--limit`.
+  if (!forced) {
+    const rankedPool = rankPlaces(pool, { pop, towns: townSlugs, extract });
+    scoped = rankedPool.concat(rankedScope.slice(pool.length));
+  }
+  // Uniqueness is computed over this whole cleaned scope, not just the slice,
+  // so a shared postcode centroid is still detected after --limit.
+  rankedScope = scoped;
+  if (limit > 0) scoped = timed('slice', () => scoped.slice(0, limit));
+  if (!scoped.length) return empty();
+
+  // 8. Full wiki rows (extract text, photo licence, ...) for the CHOSEN places
+  //    only - at most `--limit`, so this stays a handful of indexed lookups.
   const { wiki, coords: dbCoords } = readWikiDb(paths.wikiDb, {
     tables: wikiTables,
     entries: scoped,
@@ -1539,38 +1747,12 @@ async function collect(options) {
     deadline,
   });
 
-  // 5. Clean up and rank the scoped places (skipped for a forced exact list).
-  const townRows = readTownCoords(paths.towns, { state, cols: paths.townsCols, deadline });
-  const townBySlug = new Map(townRows.map((r) => [r.slug, r]));
-  if (!forced) {
-    scoped = skipNonPlaces(scoped, { deny: placesDeny, allow: placesAllow });
-    scoped = mergePlaces(scoped, {
-      coords: new Map([...townBySlug].map(([slug, r]) => [slug, { lat: r.lat, lon: r.lon }])),
-    });
-    const pop = new Map();
-    for (const [slug, w] of Object.entries(wiki)) {
-      const value = w && w.population ? Number(w.population.value) : NaN;
-      if (Number.isFinite(value) && value > 0) pop.set(slug, value);
-    }
-    const extract = new Set(Object.keys(wiki).filter((s) => wiki[s] && wiki[s].extract));
-    scoped = rankPlaces(scoped, { pop, towns: new Set(townRows.map((r) => r.slug)), extract });
-  }
-  // Uniqueness is computed over this whole cleaned scope, not just the slice,
-  // so a shared postcode centroid is still detected after --limit.
-  const rankedScope = scoped;
-  if (limit > 0) scoped = scoped.slice(0, limit);
-  if (!scoped.length) return empty();
-
-  // Keep the wiki output to the chosen places (ranking looked up more of them).
-  const chosen = new Set(scoped.map((e) => e.slug));
-  for (const slug of Object.keys(wiki)) if (!chosen.has(slug)) delete wiki[slug];
-
   if (dryRun) {
     log(`chosen ${scoped.length} place(s) (rank reason in [ ]):`);
     for (const e of scoped) log(`  - ${e.name} (${e.state || country}) [${e.rankReason || 'suburb'}]`);
   }
 
-  // 6. Coordinates: unique town rows first, the wiki cache as a fallback.
+  // 9. Coordinates: unique town rows first, the wiki cache as a fallback.
   const coordRows = [];
   for (const entry of rankedScope) {
     const row = townBySlug.get(entry.slug);
@@ -1585,7 +1767,7 @@ async function collect(options) {
   const coords = new Map(towns.filter((t) => t.unique).map((t) => [t.slug, { lat: t.lat, lon: t.lon }]));
   log(`coords: ${towns.length} town(s), ${coords.size} unique coordinate(s)`);
 
-  // 7. Places: the local place-name TSV plus OSM POIs clipped with osmium.
+  // 10. Places: the local place-name TSV plus OSM POIs clipped with osmium.
   //    The clip is the one heavy step, so a --dry-run trial skips it.
   const places = { ...readPlaceNames(paths.placesFile, { entries: scoped, cols: paths.placesCols, deadline }) };
   if (dryRun) {
@@ -1607,8 +1789,8 @@ async function collect(options) {
     }
   }
 
-  // 6. Businesses: our own directory file sources plus the optional MySQL
-  //    listings source. With neither configured this is skipped with a log line.
+  // 11. Businesses: our own directory file sources plus the optional MySQL
+  //     listings source. With neither configured this is skipped with a log line.
   const businesses = {};
   if (paths.directories && paths.directories.length) {
     Object.assign(businesses, readDirectories(paths.directories, { entries: scoped }));
@@ -1623,7 +1805,7 @@ async function collect(options) {
     log('listings: no MySQL source (--listings-env) or directory file configured; skipping listings');
   }
 
-  // 7. Census: local attributed figures only (never invented).
+  // 12. Census: local attributed figures only (never invented).
   if (paths.census) {
     const census = readCensus(paths.census, { entries: scoped });
     for (const [slug, pop] of Object.entries(census)) {
@@ -1631,7 +1813,7 @@ async function collect(options) {
     }
   }
 
-  // 8. Optional, last-resort Wikipedia fill for places still missing an extract.
+  // 13. Optional, last-resort Wikipedia fill for places still missing an extract.
   if (allowNetwork) {
     for (const entry of scoped) {
       const existing = wiki[entry.slug];
@@ -1713,6 +1895,9 @@ async function main(argv = process.argv.slice(2)) {
   const outDir = path.resolve(ROOT, args.out || DEFAULTS.out);
   const cacheDir = path.resolve(ROOT, args.cache || DEFAULTS.cache);
   const limit = args.limit ? Math.max(0, parseInt(args.limit, 10)) : 0;
+  const rankPool = args.rankPool !== undefined && Number.isFinite(parseInt(args.rankPool, 10))
+    ? Math.max(0, parseInt(args.rankPool, 10))
+    : DEFAULTS.rankPool;
   const maxSeconds = args.maxSeconds ? Number(args.maxSeconds) : DEFAULTS.maxSeconds;
   const dryRun = Boolean(args.dryRun);
   const allowNetwork = Boolean(args.allowNetwork);
@@ -1739,7 +1924,10 @@ async function main(argv = process.argv.slice(2)) {
   const placesAllow = list(args.placesAllow).length ? list(args.placesAllow) : list(process.env.AREAS_PLACES_ALLOW);
   const wikiTables = args.wikiTables ? String(args.wikiTables).split(',').filter(Boolean) : HOST.wikiTables.split(',');
 
-  log(`start country=${country} state=${state || 'all'} out=${outDir} max=${maxSeconds}s network=${allowNetwork ? 'on' : 'off'}${dryRun ? ' dry-run' : ''}`);
+  log(
+    `start country=${country} state=${state || 'all'} out=${outDir} limit=${limit || '-'}` +
+      ` rank-pool=${rankPool || 'all'} max=${maxSeconds}s network=${allowNetwork ? 'on' : 'off'}${dryRun ? ' dry-run' : ''}`
+  );
   log(`sources: suburbs=${paths.suburbs || '-'} towns=${paths.towns} wiki=${paths.wikiDb} osm=${paths.osm || '-'}`);
   log(`listings: ${paths.listingsEnv ? `env=${paths.listingsEnv} table=${paths.listingsTable}` : 'none configured (skipped)'}`);
 
@@ -1767,6 +1955,7 @@ async function main(argv = process.argv.slice(2)) {
       forcedPlaces,
       placesDeny,
       placesAllow,
+      rankPool,
     });
   } catch (err) {
     if (err instanceof TimeBudgetError) {
@@ -1819,6 +2008,10 @@ module.exports = {
   skipNonPlaces,
   rankPlaces,
   rankReasonOf,
+  preRankPlaces,
+  stateFullName,
+  nameVariants,
+  lookupWikiBatch,
   DEFAULT_DENY_WORDS,
   readSuburbs,
   readTownCoords,

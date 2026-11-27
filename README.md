@@ -282,7 +282,8 @@ nice -n 19 ionice -c idle node scripts/areas/prepare.js \
 ```
 
 Flags: `--country` (required), `--state`, `--out` (default `data/areas-src`),
-`--limit`, `--dry-run`, `--max-seconds` (default `300`), `--allow-network`
+`--limit`, `--rank-pool` (default `500`), `--dry-run`, `--max-seconds` (default
+`300`), `--allow-network`
 (**off** by default), `--cache`, `--suburbs` + `--suburbs-cols`, `--towns` +
 `--towns-cols`, `--places` (force an exact `A,B,C` list), `--places-file` +
 `--places-cols`, `--places-deny`, `--places-allow`, `--wiki-db`, `--wiki-tables`,
@@ -316,16 +317,28 @@ password rides in the environment, never on the command line. With no source
 configured the listings are skipped with a log line.
 
 **How places are picked.** Inside the `--country` / `--state` scope the place
-list is cleaned up and then **ranked by importance, biggest first, before
-`--limit` is applied** — so a trial keeps real towns (Melbourne, Geelong,
-Ballarat, Bendigo) rather than a postcode-centroid row that merely happened to
-be first in the file:
+list is cleaned up, cheaply pre-ranked, and then **ranked by importance,
+biggest first, before `--limit` is applied** — so a trial keeps real towns
+(Melbourne, Geelong, Ballarat, Bendigo) rather than a postcode-centroid row
+that merely happened to be first in the file:
 
-1. **Population** from `wd.sqlite` table `en` (column `pop`), matched by title —
-   for the scoped places only (an indexed lookup, never a full scan).
-2. **Real towns** (`towns.tsv`) rank above suburbs-file-only names.
-3. **A Wikipedia extract** (`ex`) ranks above no extract.
-4. File order breaks any remaining tie (the sort is stable).
+1. **Skip non-places and merge duplicates** first, so the junk names never
+   reach the rank (see below).
+2. **Cheap pre-rank**: real towns (`towns.tsv`) sort ahead of suburbs-file-only
+   names (file order inside each group). Only the head of this list — the top
+   `--rank-pool` candidates (default `500`) — is looked up at all.
+3. **Population** from `wd.sqlite` table `en` (column `pop`), matched by title.
+   This is **one batched join**, never a query per place: the candidates' titles
+   (the name, `Name, State` and `Name (State)`, in original case and lowercased)
+   are staged in a `TEMP` table and joined once against `en.title`, so the
+   cache's own title index is used and the table is never scanned.
+4. **A Wikipedia extract** (`ex`) ranks above no extract (read from the same
+   join).
+5. File order breaks any remaining tie (the sort is stable).
+
+Places past the pool keep their pre-rank order, so a wide run is unaffected
+while a `--limit 8` trial does a handful of work. Each step's timing is logged
+(`skip`, `dedupe`, `pre-rank`, `wiki join`, `slice`).
 
 Non-places are dropped: postcode-only and PO-Box style names always, and names
 containing a deny word (`Centre`, `Central`, `GPO`, `Delivery`, `Mail`,
@@ -344,10 +357,12 @@ Honesty rules hold. Local data comes first; the network is a last resort only
 (`--allow-network`, rate-limited to one request/second and cached per response).
 The place list is scoped by `--country` / `--state` **before** any heavy read, so
 the ~1.2 GB `wd.sqlite` is never walked end to end: its columns are introspected
-once (`PRAGMA table_info`) and each place is fetched by title (or slug), with
-photos joined by file name — the extra lookups needed for ranking stay inside
-the state scope, and the written `wiki.json` is trimmed back to the chosen
-places. A missing column, a missing file or an unnamed place is **skipped** with
+once (`PRAGMA table_info`), the candidates' populations come from a single
+batched title join, and the full rows (extract, photo, licence) are then fetched
+by title (or slug) for the **chosen places only**, with photos joined by file
+name. Nothing is ever written to the cache and no index is created in it — the
+batched join only uses a `TEMP` table on the read-only connection. A missing
+column, a missing file or an unnamed place is **skipped** with
 a log line, never guessed; a place list that cannot be read fails the run rather
 than falling back to the whole cache.
 `--max-seconds` bounds every run and progress is logged every 10,000 rows.
