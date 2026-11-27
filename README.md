@@ -331,7 +331,13 @@ that merely happened to be first in the file:
    This is **one batched join**, never a query per place: the candidates' titles
    (the name, `Name, State` and `Name (State)`, in original case and lowercased)
    are staged in a `TEMP` table and joined once against `en.title`, so the
-   cache's own title index is used and the table is never scanned.
+   cache's own title index is used and the table is never scanned. A place only
+   takes a page that is **really in its state**: the `Name, State` title wins,
+   and a bare title is accepted only when it checks out against the place — the
+   row's coordinates are within ~50 km of the place's own lat/lon, or its extract
+   names the state or "Australia". A same-name place overseas (Brooklyn,
+   Houston, Olinda, …) fails both and is treated as no match. A population
+   bigger than the whole state (a small table, e.g. VIC ≈ 7M) is rejected.
 4. **A Wikipedia extract** (`ex`) ranks above no extract (read from the same
    join).
 5. File order breaks any remaining tie (the sort is stable).
@@ -350,8 +356,8 @@ name in a different state stays separate.
 
 `--places "Geelong,Ballarat,Bendigo"` forces an **exact** list in the given
 order (bypassing the ranking and the skip rules). In `--dry-run` the chosen
-places are printed with their rank reason, e.g. `Melbourne (vic) [pop=5300000,
-town, wiki]`.
+places are printed with their rank reason and the wiki title that matched, e.g.
+`Melbourne (vic) [pop=5300000, town, wiki] title=Melbourne pop=5,300,000`.
 
 Honesty rules hold. Local data comes first; the network is a last resort only
 (`--allow-network`, rate-limited to one request/second and cached per response).

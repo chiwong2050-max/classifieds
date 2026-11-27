@@ -36,6 +36,12 @@
  *   - The Wikipedia/Commons cache (`wd.sqlite`, ~1.2 GB) is NEVER full-scanned:
  *     rows are fetched by title (and photos joined by file), the `it` table is
  *     skipped by default, and a `--max-seconds` budget stops a runaway run.
+ *   - A place only takes a page that is really in its state: the
+ *     "Name, State" title is preferred, a bare title is accepted only when its
+ *     coordinates are within ~50 km or its extract names the state/"Australia",
+ *     and a population bigger than the whole state is rejected. Without this a
+ *     same-name place overseas (Brooklyn, Houston, Olinda, ...) donated its
+ *     population and pushed out real towns.
  *   - If the place list cannot be read the run fails with a clear error rather
  *     than falling back to walking the whole cache.
  *
@@ -132,6 +138,33 @@ const HOST = {
   wikiTables: 'en,ph',
   towns: '/root/as-wiki/towns.tsv',
   places: '/root/aw-wiki/places.tsv',
+};
+
+/**
+ * A bare (undisambiguated) page title is only trusted when it checks out
+ * against our place: the wiki row's coordinates are within this many km of the
+ * place's own lat/lon, or its extract names the state or "Australia". A
+ * same-name place overseas (Brooklyn, Houston, Olinda, ...) fails both, so it
+ * is treated as no match rather than donating its population.
+ */
+const BARE_TITLE_MAX_KM = 50;
+
+/**
+ * Sanity cap on a matched population: nothing can be bigger than the whole
+ * state, so a larger value is a wrong page. Only states we scope are listed
+ * (the `prepare.js` job is AU-focused); an unknown country/state has no cap.
+ */
+const STATE_POP_CAP = {
+  au: {
+    nsw: 9000000,
+    vic: 7000000,
+    qld: 6000000,
+    sa: 2000000,
+    wa: 3000000,
+    tas: 600000,
+    nt: 300000,
+    act: 500000,
+  },
 };
 
 /**
@@ -706,29 +739,96 @@ function timed(label, fn) {
 }
 
 /**
- * Exact page-title variants for a place. These are matched by *equality* so the
- * cache's own index on the title column is used; the case-preserving forms come
- * first (the real cache is case-sensitive) with lowercased forms as insurance.
+ * Ordered page-title candidates for a place, each tagged `strict`.
+ *
+ * The disambiguated titles (`"Ballarat, Victoria"`, `"Ballarat (Victoria)"`)
+ * come first: a state-specific page is trusted outright. The bare title is the
+ * last resort and must pass a check before it is accepted (see `bareTitleOk`).
+ * Both case-preserving and lowercased forms are staged because the real cache's
+ * title column is case-sensitive.
+ *
+ * @returns {Array<{title:string, strict:boolean}>}
  */
-function nameVariants(name, stateFull) {
+function titleCandidates(name, stateFull) {
   const base = String(name || '').trim();
   if (!base) return [];
-  const forms = [base];
-  if (stateFull) {
-    forms.push(`${base}, ${stateFull}`);
-    forms.push(`${base} (${stateFull})`);
-  }
   const seen = new Set();
   const out = [];
-  for (const form of forms) {
-    for (const value of [form, form.toLowerCase()]) {
+  const push = (title, strict) => {
+    for (const value of [title, title.toLowerCase()]) {
       if (!seen.has(value)) {
         seen.add(value);
-        out.push(value);
+        out.push({ title: value, strict });
       }
     }
+  };
+  if (stateFull) {
+    push(`${base}, ${stateFull}`, true);
+    push(`${base} (${stateFull})`, true);
   }
+  push(base, false);
   return out;
+}
+
+/** The title strings for a place, disambiguated first (see `titleCandidates`). */
+function nameVariants(name, stateFull) {
+  return titleCandidates(name, stateFull).map((c) => c.title);
+}
+
+/** Cap on a state's total population, `Infinity` when the state is not known. */
+function statePopCap(country, state) {
+  const byCountry = STATE_POP_CAP[String(country || '').toLowerCase()];
+  if (!byCountry) return Infinity;
+  const cap = byCountry[String(state || '').toLowerCase()];
+  return Number.isFinite(cap) && cap > 0 ? cap : Infinity;
+}
+
+/** Does an extract name the state (e.g. "Victoria") or the country ("Australia")? */
+function mentionsStateOrAustralia(text, stateFull) {
+  const hay = String(text || '').toLowerCase();
+  if (!hay) return false;
+  if (hay.includes('australia')) return true;
+  return Boolean(stateFull) && hay.includes(String(stateFull).toLowerCase());
+}
+
+/**
+ * Would a bare-title row really describe our place? True when the row's
+ * coordinates are within `BARE_TITLE_MAX_KM` of the place's own lat/lon, or its
+ * extract names the state or "Australia". A row with neither signal is a
+ * same-name place elsewhere and must not be accepted.
+ */
+function bareTitleOk(entry, row, { stateFull = '', maxKm = BARE_TITLE_MAX_KM } = {}) {
+  const lat = Number(entry && entry.lat);
+  const lon = Number(entry && entry.lon);
+  const rlat = Number(row && row.lat);
+  const rlon = Number(row && row.lon);
+  if ([lat, lon, rlat, rlon].every(Number.isFinite)) {
+    if (lib.haversineKm({ lat, lon }, { lat: rlat, lon: rlon }) <= maxKm) return true;
+  }
+  return mentionsStateOrAustralia(row && row.ex, stateFull);
+}
+
+/**
+ * Pick the cache row a place should take from the rows its candidate titles
+ * matched. A `strict` (state-disambiguated) row always beats a bare one; a bare
+ * row is only used when it passes `bareTitleOk`. The largest valid population
+ * wins (after the state cap drops an impossible one).
+ *
+ * @returns {{title:string, pop:number, hasExtract:boolean}|null}
+ */
+function pickWikiMatch(entry, rows, { stateFull = '', country = '', state = '' } = {}) {
+  if (!rows || !rows.length) return null;
+  const strict = rows.filter((r) => r.strict);
+  const pool = strict.length ? strict : rows.filter((r) => bareTitleOk(entry, r, { stateFull }));
+  if (!pool.length) return null;
+  const cap = statePopCap(country, state);
+  let best = pool[0];
+  for (const row of pool) {
+    if ((row.pop || 0) > (best.pop || 0)) best = row;
+  }
+  const pop = Number.isFinite(best.pop) && best.pop > cap ? 0 : best.pop || 0;
+  const hasExtract = Boolean(best.ex && String(best.ex).trim());
+  return { title: best.title, pop, hasExtract };
 }
 
 // --- Wikipedia / Commons SQLite cache --------------------------------------
@@ -963,30 +1063,35 @@ function readWikiDb(file, { tables, entries, slugColumn, deadline, progressEvery
  *     index is created in it - only the connection's TEMP store is used);
  *   - each candidate's page titles are staged in a TEMP table - the name, its
  *     "Name, State" and "Name (State)" variants, in original case and
- *     lowercased, so a case-sensitive title column still matches;
+ *     lowercased, so a case-sensitive title column still matches; each row is
+ *     tagged `strict` (a state-disambiguated title) or bare;
  *   - ONE `JOIN` probes `en` by title *equality*, so it uses the cache's own
- *     index on `title` and never scans the table.
+ *     index on `title` and never scans the table;
+ *   - a place then takes ONE page via `pickWikiMatch`: a state-disambiguated
+ *     page wins outright, a bare page only when it checks out against the place
+ *     (see `bareTitleOk`), and an impossible population is dropped.
  *
- * @returns {{ pop: Map<string,number>, extract: Set<string> }}
+ * @returns {{ pop: Map<string,number>, extract: Set<string>, title: Map<string,string> }}
  */
-function lookupWikiBatch(file, { entries, stateFull = '', deadline } = {}) {
+function lookupWikiBatch(file, { entries, stateFull = '', country = '', state = '', deadline } = {}) {
   const pop = new Map();
   const extract = new Set();
+  const title = new Map();
   if (!file || !fs.existsSync(file)) {
     log(`wiki-batch: ${file || '(unset)'} not found; skipping`);
-    return { pop, extract };
+    return { pop, extract, title };
   }
   const rows = entries || [];
   if (!rows.length) {
     log('wiki-batch: no candidates; skipping');
-    return { pop, extract };
+    return { pop, extract, title };
   }
   let db;
   try {
     db = new Database(file, { readonly: true, fileMustExist: true });
   } catch (err) {
     log(`wiki-batch: cannot open ${file}: ${err.message}; skipping`);
-    return { pop, extract };
+    return { pop, extract, title };
   }
   try {
     const present = new Set(
@@ -994,55 +1099,80 @@ function lookupWikiBatch(file, { entries, stateFull = '', deadline } = {}) {
     );
     if (!present.has('en')) {
       log('wiki-batch: table "en" not present; skipping');
-      return { pop, extract };
+      return { pop, extract, title };
     }
     const cols = db.prepare(`PRAGMA table_info(${quoteIdent('en')})`).all().map((c) => c.name);
     const map = wikiColumns(cols, 'en');
     const titleCol = map.title;
     if (!titleCol) {
       log('wiki-batch: table "en" has no title column; skipping');
-      return { pop, extract };
+      return { pop, extract, title };
     }
     const popCol = map.popValue;
     const yearCol = map.popYear;
     const exCol = map.extract;
+    const latCol = map.lat;
+    const lonCol = map.lon;
 
     // Stage the candidate titles in a TEMP table, then join once. The TEMP
     // store lives beside the read-only file, so the cache itself is untouched.
-    db.exec('CREATE TEMP TABLE wanted (title TEXT, slug TEXT)');
-    const insert = db.prepare('INSERT INTO wanted (title, slug) VALUES (?, ?)');
+    db.exec('CREATE TEMP TABLE wanted (title TEXT, slug TEXT, strict INTEGER)');
+    const insert = db.prepare('INSERT INTO wanted (title, slug, strict) VALUES (?, ?, ?)');
     const pairs = [];
     for (const entry of rows) {
-      for (const title of nameVariants(entry.name, stateFull)) pairs.push({ title, slug: entry.slug });
+      for (const cand of titleCandidates(entry.name, stateFull)) {
+        pairs.push({ title: cand.title, slug: entry.slug, strict: cand.strict ? 1 : 0 });
+      }
     }
     db.transaction((batch) => {
-      for (const pair of batch) insert.run(pair.title, pair.slug);
+      for (const pair of batch) insert.run(pair.title, pair.slug, pair.strict);
     })(pairs);
 
     const q = quoteIdent;
     const sql =
       `SELECT w.${q('slug')} AS slug,` +
+      ` w.${q('strict')} AS strict,` +
+      ` e.${q(titleCol)} AS wtitle,` +
       ` ${popCol ? `e.${q(popCol)}` : 'NULL'} AS pop,` +
       ` ${yearCol ? `e.${q(yearCol)}` : 'NULL'} AS py,` +
-      ` ${exCol ? `e.${q(exCol)}` : 'NULL'} AS ex` +
+      ` ${exCol ? `e.${q(exCol)}` : 'NULL'} AS ex,` +
+      ` ${latCol ? `e.${q(latCol)}` : 'NULL'} AS wlat,` +
+      ` ${lonCol ? `e.${q(lonCol)}` : 'NULL'} AS wlon` +
       ` FROM wanted w JOIN ${q('en')} e ON e.${q(titleCol)} = w.${q('title')}`;
 
     if (deadline) deadline.guard();
     const matched = db.prepare(sql).all();
-    const hit = new Set();
+
+    // Group the matched pages per place, then let ONE page win.
+    const bySlug = new Map();
     for (const row of matched) {
       const value = Number(row.pop);
       const year = Number(row.py);
       const yearOk = !yearCol || (Number.isFinite(year) && year > 0);
-      if (Number.isFinite(value) && value > 0 && yearOk) {
-        const seen = pop.get(row.slug);
-        if (seen === undefined || value > seen) pop.set(row.slug, value);
-      }
-      if (row.ex !== null && row.ex !== undefined && String(row.ex).trim()) extract.add(row.slug);
-      hit.add(row.slug);
+      const validPop = Number.isFinite(value) && value > 0 && yearOk ? value : 0;
+      const ex = row.ex === null || row.ex === undefined ? '' : String(row.ex);
+      const list = bySlug.get(row.slug) || [];
+      list.push({
+        title: String(row.wtitle == null ? '' : row.wtitle),
+        strict: Number(row.strict) === 1,
+        pop: validPop,
+        ex,
+        lat: row.wlat,
+        lon: row.wlon,
+      });
+      bySlug.set(row.slug, list);
+    }
+
+    const entryBySlug = new Map(rows.map((e) => [e.slug, e]));
+    for (const [slug, list] of bySlug) {
+      const best = pickWikiMatch(entryBySlug.get(slug) || {}, list, { stateFull, country, state });
+      if (!best) continue;
+      if (best.pop > 0) pop.set(slug, best.pop);
+      if (best.hasExtract) extract.add(slug);
+      title.set(slug, best.title);
     }
     log(
-      `wiki-batch: ${rows.length} candidate(s) -> ${hit.size} matched` +
+      `wiki-batch: ${rows.length} candidate(s) -> ${title.size} matched` +
         ` via ${pairs.length} staged title(s) (${pop.size} with population)`
     );
   } catch (err) {
@@ -1050,7 +1180,7 @@ function lookupWikiBatch(file, { entries, stateFull = '', deadline } = {}) {
   } finally {
     db.close();
   }
-  return { pop, extract };
+  return { pop, extract, title };
 }
 
 // --- Town coordinates ------------------------------------------------------
@@ -1720,11 +1850,17 @@ async function collect(options) {
   const poolSize = Number.isFinite(rankPool) && rankPool > 0 ? rankPool : rankedScope.length;
   const pool = forced ? [] : rankedScope.slice(0, poolSize);
   if (!forced) log(`rank pool: ${pool.length} of ${rankedScope.length} candidate(s)`);
-  const { pop, extract } = pool.length
+  const { pop, extract, title: wikiTitles } = pool.length
     ? timed('wiki join', () =>
-        lookupWikiBatch(paths.wikiDb, { entries: pool, stateFull: stateFullName(country, state), deadline })
+        lookupWikiBatch(paths.wikiDb, {
+          entries: pool,
+          stateFull: stateFullName(country, state),
+          country,
+          state,
+          deadline,
+        })
       )
-    : { pop: new Map(), extract: new Set() };
+    : { pop: new Map(), extract: new Set(), title: new Map() };
 
   // 7. Rank by importance (population, then a real town, then an extract) and
   //    only then apply `--limit`.
@@ -1748,8 +1884,13 @@ async function collect(options) {
   });
 
   if (dryRun) {
-    log(`chosen ${scoped.length} place(s) (rank reason in [ ]):`);
-    for (const e of scoped) log(`  - ${e.name} (${e.state || country}) [${e.rankReason || 'suburb'}]`);
+    log(`chosen ${scoped.length} place(s) (rank reason in [ ], matched wiki title after):`);
+    for (const e of scoped) {
+      const title = wikiTitles.get(e.slug);
+      const value = pop.get(e.slug);
+      const matched = title ? ` title=${title} pop=${Number.isFinite(value) ? value.toLocaleString('en-AU') : 0}` : '';
+      log(`  - ${e.name} (${e.state || country}) [${e.rankReason || 'suburb'}]${matched}`);
+    }
   }
 
   // 9. Coordinates: unique town rows first, the wiki cache as a fallback.
@@ -2011,6 +2152,11 @@ module.exports = {
   preRankPlaces,
   stateFullName,
   nameVariants,
+  titleCandidates,
+  statePopCap,
+  mentionsStateOrAustralia,
+  bareTitleOk,
+  pickWikiMatch,
   lookupWikiBatch,
   DEFAULT_DENY_WORDS,
   readSuburbs,
@@ -2032,4 +2178,6 @@ module.exports = {
   HOST,
   COUNTRIES,
   KNOWN_CACHE_COLS,
+  BARE_TITLE_MAX_KM,
+  STATE_POP_CAP,
 };

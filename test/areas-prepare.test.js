@@ -435,6 +435,10 @@ test('area prepare step', async (t) => {
     });
     assert.deepEqual(result.sources.areas.map((a) => a.slug), ['sydney']);
     assert.ok(logs.some((l) => l.includes('pop=5300000')), 'the rank reason is logged in dry-run');
+    assert.ok(
+      logs.some((l) => l.includes('title=Sydney, New South Wales')),
+      'dry-run shows which wiki title matched'
+    );
   });
 
   await t.test('lookupWikiBatch reads populations in ONE join and never writes to the cache', () => {
@@ -474,6 +478,95 @@ test('area prepare step', async (t) => {
       .map((r) => r.name);
     check.close();
     assert.deepEqual(tables, ['en'], 'the batched join never writes to wd.sqlite');
+  });
+
+  await t.test('a same-name overseas city is rejected (its page is not our place)', () => {
+    const file = path.join(TMP, 'wd-overseas.sqlite');
+    fs.rmSync(file, { force: true });
+    const db = new Database(file);
+    db.exec('CREATE TABLE en (title TEXT PRIMARY KEY, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+    const ins = db.prepare('INSERT INTO en VALUES (?,?,?,?,?)');
+    // The US Brooklyn: no state mention, no coordinates, a huge population.
+    ins.run('Brooklyn', 'Brooklyn is a borough of New York City in the United States.', 2700000, 2021, null);
+    db.close();
+
+    const { pop, extract, title } = prepare.lookupWikiBatch(file, {
+      entries: [{ slug: 'brooklyn', name: 'Brooklyn' }],
+      stateFull: 'Victoria',
+      country: 'au',
+      state: 'vic',
+    });
+    assert.equal(pop.has('brooklyn'), false, 'a wrong-page population is never taken');
+    assert.equal(extract.has('brooklyn'), false, 'the wrong page is not even a wiki match');
+    assert.equal(title.has('brooklyn'), false, 'no title is matched');
+  });
+
+  await t.test('the disambiguated "Name, State" title wins over the bare title', () => {
+    const file = path.join(TMP, 'wd-disambig.sqlite');
+    fs.rmSync(file, { force: true });
+    const db = new Database(file);
+    db.exec('CREATE TABLE en (title TEXT PRIMARY KEY, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+    const ins = db.prepare('INSERT INTO en VALUES (?,?,?,?,?)');
+    ins.run('Brooklyn', 'Brooklyn is a borough of New York City.', 2700000, 2021, null);
+    ins.run('Brooklyn, Victoria', 'Brooklyn is a suburb of Melbourne in Victoria.', 1900, 2021, null);
+    db.close();
+
+    const { pop, title } = prepare.lookupWikiBatch(file, {
+      entries: [{ slug: 'brooklyn', name: 'Brooklyn' }],
+      stateFull: 'Victoria',
+      country: 'au',
+      state: 'vic',
+    });
+    assert.equal(title.get('brooklyn'), 'Brooklyn, Victoria', 'the state-specific page is used');
+    assert.equal(pop.get('brooklyn'), 1900, 'the big bare-title population is ignored');
+  });
+
+  await t.test('a bare title is accepted only within ~50 km (coordinate check)', () => {
+    const file = path.join(TMP, 'wd-coords.sqlite');
+    fs.rmSync(file, { force: true });
+    const db = new Database(file);
+    db.exec('CREATE TABLE en (title TEXT PRIMARY KEY, ex TEXT, pop INTEGER, py INTEGER, img TEXT, lat REAL, lon REAL)');
+    const ins = db.prepare('INSERT INTO en VALUES (?,?,?,?,?,?,?)');
+    // Same kind of extract, no state mention: only the coordinates separate them.
+    ins.run('Hamilton', 'Hamilton is a locality.', 1000, 2021, null, -37.79, 144.95); // near Melbourne
+    ins.run('Kingston', 'Kingston is a locality.', 9000, 2021, null, -33.86, 151.21); // Sydney, ~700 km away
+    db.close();
+
+    const { pop } = prepare.lookupWikiBatch(file, {
+      entries: [
+        { slug: 'hamilton', name: 'Hamilton', lat: -37.81, lon: 144.91 }, // Melbourne area
+        { slug: 'kingston', name: 'Kingston', lat: -37.81, lon: 144.91 },
+      ],
+      stateFull: 'Victoria',
+      country: 'au',
+      state: 'vic',
+    });
+    assert.equal(pop.get('hamilton'), 1000, 'the row within 50 km is accepted');
+    assert.equal(pop.has('kingston'), false, 'the far row is not within 50 km');
+  });
+
+  await t.test('a population bigger than the whole state is rejected', () => {
+    const file = path.join(TMP, 'wd-cap.sqlite');
+    fs.rmSync(file, { force: true });
+    const db = new Database(file);
+    db.exec('CREATE TABLE en (title TEXT PRIMARY KEY, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+    const ins = db.prepare('INSERT INTO en VALUES (?,?,?,?,?)');
+    ins.run('Melbourne, Victoria', 'Melbourne is the capital of Victoria.', 9000000, 2021, null);
+    ins.run('Ballarat, Victoria', 'Ballarat is a city in Victoria.', 110000, 2021, null);
+    db.close();
+
+    const { pop, title } = prepare.lookupWikiBatch(file, {
+      entries: [
+        { slug: 'melbourne', name: 'Melbourne' },
+        { slug: 'ballarat', name: 'Ballarat' },
+      ],
+      stateFull: 'Victoria',
+      country: 'au',
+      state: 'vic',
+    });
+    assert.equal(pop.has('melbourne'), false, 'a value bigger than VIC (~7M) is not a town');
+    assert.equal(pop.get('ballarat'), 110000, 'a plausible value is kept');
+    assert.equal(title.get('melbourne'), 'Melbourne, Victoria', 'the page is still noted, just not its population');
   });
 
   await t.test('--rank-pool bounds the population lookup (a big town past the pool cannot win)', async () => {
