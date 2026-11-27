@@ -256,22 +256,57 @@ A sitemap entry therefore needs all three: indexing on **and** the place enabled
 flips the env after review (target ~2 December 2026). Nothing in this repo turns
 it on.
 
-### Server data-build job (`scripts/areas/`)
+### Server data jobs (`scripts/areas/`)
 
-The job turns local source caches into that JSON tree. It is **not started by the
-web process**: a server admin runs it, then copies the output to the app host. It
-reads local caches first and only touches the network as an explicit last resort
+Two steps run on the **data host** (**today: UltaHost**, `82.23.146.45`) — never
+on the app host, and never started by the web process:
+
+1. **`prepare.js`** reads the live caches already on that disk and writes the
+   tidy `--sources` tree (`areas.csv`, `wiki.json`, `towns.tsv`, optional
+   `places.json` / `businesses.json`). Those prepared files did not previously
+   exist — the live caches are in other formats.
+2. **`build.js`** turns that tree into the per-area JSON files.
+
+The app host holds **no** extracts, caches or directory databases: it only
+receives the finished JSON tree.
+
+#### 1. Prepare: caches → `--sources`
+
+```bash
+# Trial one state; computes everything, writes nothing and skips the OSM clip:
+node scripts/areas/prepare.js --country au --state vic --dry-run
+
+# Write the AU sources tree, low impact (honours /usr/local/bin/main-ok.sh):
+nice -n 19 ionice -c idle node scripts/areas/prepare.js \
+  --country au --state nsw --out /srv/areas-src
+```
+
+Flags: `--country` (required), `--state`, `--out` (default `data/areas-src`),
+`--limit`, `--dry-run`, `--allow-network` (**off** by default), `--cache`,
+`--suburbs`, `--towns`, `--places`, `--wiki-db`, `--wiki-tables`, `--osm-file`,
+`--directories`, `--census`. The defaults point at the caches already on the
+data host:
+
+| Source | Default path on the data host |
+| ------ | ----------------------------- |
+| Localities — names + postcodes only, **never** distances (centroid table) | `/root/ap_suburbs.csv` |
+| Town coordinates (the only distance source) | `/root/as-wiki/towns.tsv` |
+| Place names | `/root/aw-wiki/places.tsv` |
+| Wikipedia / Commons cache | `/root/aw-wiki/wd.sqlite` (tables `en`, `it`, `ph`, others) |
+| OpenStreetMap extract — clipped locally with `osmium` (never Overpass) | `/root/geofabrik/pbf/AU.pbf` · `/root/geofabrik/pbf/US.pbf` (or `us-<state>-latest.osm.pbf`) |
+| Directory databases (real published local listings only) | australiaweb · localaus · eatzap · findacarer (AU) · localusa · eatzap (US) |
+
+Honesty rules hold. Local data comes first; the network is a last resort only
 (`--allow-network`, rate-limited to one request/second and cached per response).
+Columns are detected by name from the real files (`PRAGMA table_info` on the
+SQLite cache), so no schema is assumed: an unknown column, a missing file or an
+unnamed place is **skipped** with a log line, never guessed. `unique` is computed
+from the coordinates themselves — a point shared by several places (a postcode
+centroid) is written `unique=false` and never becomes a `km`. US population is
+written only from a local attributed Census file (`--census`); with none the
+section stays empty rather than inventing figures.
 
-It runs on the host that holds the caches (**today: UltaHost**, `82.23.146.45`);
-point `--sources` at a directory built from, or symlinked to, these paths:
-
-| Source | Path on the data host |
-| ------ | --------------------- |
-| OpenStreetMap extracts — clip a bbox per area with `osmium` (no Overpass) | `/root/geofabrik/pbf/AU.pbf`, `/root/geofabrik/pbf/US.pbf`, plus the `us-*-latest.osm.pbf` region files for a single US state |
-| Wikipedia / Commons cache (not AU-only) | `/root/aw-wiki/wd.sqlite` (`it`/`pp`/`en`/`mt`/`ph`), `/root/aw-wiki/places.tsv`, `/root/as-wiki/towns.tsv` |
-| Postcode names — names only, **never** distances (centroid table) | `/root/ap_suburbs.csv` |
-| Directory databases (real local hits only) | australiaweb.net, localaus.xyz, eatzap.app, findacarer.app (AU) · localusa.app, eatzap.app (US) |
+#### 2. Build: `--sources` → area JSON
 
 ```bash
 # Trial one state without writing anything:
@@ -286,21 +321,23 @@ nice -n 19 ionice -c idle node scripts/areas/build.js \
 Flags: `--country`, `--state`, `--sources` (default `data/areas-src`), `--out`
 (default `data/areas-out`), `--cache` (default `.cache/areas`), `--nearby-max-km`,
 `--nearby-limit`, `--limit`, `--dry-run`, `--allow-network`. Writes are staged
-then renamed into place (atomic, idempotent). Do **not** schedule it at 03:00
-Australia/Melbourne.
+then renamed into place (atomic, idempotent).
 
-`--sources` holds the local caches: `areas.csv` (the place list:
+The `--sources` tree holds the local caches: `areas.csv` (the place list:
 `name,state,country,lga,county,slug,postcode`), `wiki.json` (Wikipedia/Commons
 per slug), `towns.tsv` (`slug,name,lat,lon,unique` — distances come **only** from
 rows flagged `unique`, so a postcode centroid never becomes a `km`), and optional
-`places.json` / `businesses.json` / `nearby.json`. US population is written only
-from a local, attributed Census cache (year + geography + URL); with no such file
-the section is skipped rather than guessed.
+`places.json` / `businesses.json` / `nearby.json`. Do **not** schedule either step
+at 03:00 or about 01:30 Australia/Melbourne.
 
-Deployment: copy the finished tree into the app host's `AREAS_DIR` (OVH #2,
-`51.38.60.110`, `listnear.service` on `127.0.0.1:3055`, `AREAS_DIR=data/areas`,
-`AREA_PAGES_INDEXING=false`), outside git. The app host holds **no** extracts,
-caches or directory databases.
+#### 3. Deploy the tree to the app host
+
+Copy the finished `data/areas-out` tree into the app host's `AREAS_DIR` (OVH #2,
+`51.38.60.110`, `listnear.service` on `127.0.0.1:3055`, currently
+`/home/ausweb/data/classifieds/areas`), outside git. Leave
+`AREA_PAGES_INDEXING=false`: the pages render but stay `noindex,follow` and out
+of the sitemap until a server admin flips the env after review (target ~2
+December 2026). Nothing in this repo turns it on.
 
 ---
 
@@ -400,9 +437,10 @@ listnear/
 │  ├─ utils/             # helpers, url builders, JSON-LD builders
 │  └─ server.js          # App entrypoint: security, sessions, routes, maintenance
 ├─ locales/              # UI text: en.json (base) + <language>.json / en-AU.json, en-US.json overrides
-├─ scripts/areas/        # Server data-build job: build.js (CLI) + lib.js (pure transforms) + network.js
+├─ scripts/areas/        # Server data jobs: prepare.js (caches→sources) + build.js (CLI) + lib.js (pure transforms) + network.js
 ├─ data/areas/           # Area JSON at runtime (git-ignored): <cc>/<state>/<slug>.json
 ├─ test/fixtures/areas/  # Tests-only example areas (au/vic, au/nsw, us/ca) — never shipped
+├─ test/fixtures/areas-prepare/  # Tests-only prepare inputs (locality CSV, towns/places TSV)
 ├─ views/                # EJS templates (partials + pages, incl. admin)
 ├─ public/               # CSS, vanilla JS, icons, manifest, service worker, uploads
 ├─ SOURCES.md            # Provenance & licences for country/region/city data
