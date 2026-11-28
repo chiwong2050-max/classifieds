@@ -599,6 +599,48 @@ test('area prepare step', async (t) => {
     assert.deepEqual(result.sources.areas.map((a) => a.slug), ['maitland']);
   });
 
+  await t.test('a big city missing from towns.tsv is still ranked (base-name town)', async () => {
+    const suburbs = tempFile(
+      'ap_suburbs.csv',
+      'Point Cook,VIC,3030,Wyndham\n' +
+        'Craigieburn,VIC,3064,Hume\n' +
+        'Tarneit,VIC,3029,Wyndham\n' +
+        'Ballarat,VIC,3350,City of Ballarat\n'
+    );
+    // `towns.tsv` lists only "Ballarat East": a bare "Ballarat" suburb would sink
+    // to the suburb pack and miss the pool - unless the base name counts as a town.
+    const towns = tempFile('towns.tsv', '1\tBallarat East\tVIC\t-37.56\t143.87\n');
+    const wikiFile = path.join(TMP, 'wd-base.sqlite');
+    fs.rmSync(wikiFile, { force: true });
+    const db = new Database(wikiFile);
+    db.exec('CREATE TABLE en (title TEXT PRIMARY KEY, ex TEXT, pop INTEGER, py INTEGER, img TEXT)');
+    const ins = db.prepare('INSERT INTO en VALUES (?,?,?,?,?)');
+    ins.run('Ballarat, Victoria', 'Ballarat is a city in Victoria.', 116201, 2021, null);
+    ins.run('Craigieburn, Victoria', 'Craigieburn is a suburb of Melbourne.', 60000, 2021, null);
+    ins.run('Point Cook, Victoria', 'Point Cook is a suburb of Melbourne.', 55000, 2021, null);
+    ins.run('Tarneit, Victoria', 'Tarneit is a suburb of Melbourne.', 45000, 2021, null);
+    db.close();
+
+    let result;
+    const logs = await captureLogsAsync(async () => {
+      result = await prepare.main([
+        '--country', 'au', '--state', 'vic',
+        '--suburbs', suburbs, '--suburbs-cols', 'name,state,postcode,lga',
+        '--towns', towns,
+        '--places-file', path.join(FIX, 'places.tsv'), '--places-cols', 'slug,name',
+        '--wiki-db', wikiFile,
+        '--rank-pool', '3', '--limit', '3', '--dry-run', '--out', path.join(TMP, 'base-dry'),
+      ]);
+    });
+    const slugs = result.sources.areas.map((a) => a.slug);
+    assert.equal(slugs[0], 'ballarat', 'the recovered big city is ranked first');
+    assert.ok(slugs.includes('ballarat'), 'Ballarat is not pushed out by the 50-60k suburbs');
+    assert.ok(
+      logs.some((l) => l.includes('title=Ballarat, Victoria pop=116,201')),
+      'dry-run shows the matched title and its population'
+    );
+  });
+
   await t.test('skipNonPlaces runs BEFORE ranking (a junk name cannot take a slot)', async () => {
     const suburbs = tempFile(
       'ap_suburbs.csv',

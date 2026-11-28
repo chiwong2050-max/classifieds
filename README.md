@@ -325,8 +325,12 @@ that merely happened to be first in the file:
 1. **Skip non-places and merge duplicates** first, so the junk names never
    reach the rank (see below).
 2. **Cheap pre-rank**: real towns (`towns.tsv`) sort ahead of suburbs-file-only
-   names (file order inside each group). Only the head of this list — the top
-   `--rank-pool` candidates (default `500`) — is looked up at all.
+   names (file order inside each group). A city `towns.tsv` only lists by its
+   parts still counts as a town — a suffixed row like `Ballarat East` or
+   `Melton South` implies the town `Ballarat`/`Melton`, so a real city with a
+   big population does not sink into the suburb pack and miss the pool. Only the
+   head of this list — the top `--rank-pool` candidates (default `500`) — is
+   looked up at all.
 3. **Population** from `wd.sqlite` table `en` (column `pop`), matched by title.
    This is **one batched join**, never a query per place: the candidates' titles
    (the name, `Name, State` and `Name (State)`, in original case and lowercased)

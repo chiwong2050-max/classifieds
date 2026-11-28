@@ -168,6 +168,15 @@ const STATE_POP_CAP = {
 };
 
 /**
+ * Suffixes a `towns.tsv` entry may carry. A city is often listed only as its
+ * parts ("Ballarat East", "Melton South") while the suburb we scope is the base
+ * name ("Ballarat"), so the base is treated as a town too - otherwise a real
+ * city with a big population sinks into the suburb pack and never gets its
+ * population looked up (it fell outside `--rank-pool`).
+ */
+const TOWN_SUFFIXES = ['east', 'west', 'north', 'south', 'central', 'upper', 'lower'];
+
+/**
  * Built-in column maps for the *known* header-less caches, keyed by file name.
  * The live files carry NO header row, so their column *order* must be supplied;
  * `--<role>-cols` (or the matching `AREAS_*_COLS` env) overrides it. Any *other*
@@ -720,6 +729,28 @@ function preRankPlaces(rows, { towns = new Set() } = {}) {
     .map((row, index) => ({ row, index, town: towns.has(row.slug) ? 1 : 0 }))
     .sort((a, b) => b.town - a.town || a.index - b.index)
     .map(({ row }) => row);
+}
+
+/**
+ * Base town slugs implied by suffixed `towns.tsv` rows: "Ballarat East" and
+ * "Melton South" imply the towns "ballarat" and "melton". Lets a real city that
+ * `towns.tsv` only lists by its parts still be pre-ranked as a town.
+ *
+ * @param {Array<{name?:string}>} towns rows from `readTownCoords`
+ * @returns {Set<string>} slugs of the base names
+ */
+function baseTownSlugs(towns) {
+  const out = new Set();
+  for (const row of towns || []) {
+    const name = String((row && row.name) || '').trim();
+    const words = name.split(/\s+/).filter(Boolean);
+    if (words.length < 2) continue;
+    const last = words[words.length - 1].toLowerCase().replace(/[^a-z]/g, '');
+    if (!TOWN_SUFFIXES.includes(last)) continue;
+    const slug = lib.slugify(words.slice(0, -1).join(' '));
+    if (slug) out.add(slug);
+  }
+  return out;
 }
 
 /** Full region name for a state slug (e.g. au/vic -> "Victoria"), else ''. */
@@ -1829,6 +1860,13 @@ async function collect(options) {
   const townRows = readTownCoords(paths.towns, { state, cols: paths.townsCols, deadline });
   const townBySlug = new Map(townRows.map((r) => [r.slug, r]));
   const townSlugs = new Set(townRows.map((r) => r.slug));
+  // A city `towns.tsv` only lists by its parts ("Ballarat East") still counts as
+  // a town, so it is pre-ranked with the towns and gets its population looked up.
+  const baseTowns = baseTownSlugs(townRows);
+  for (const slug of baseTowns) townSlugs.add(slug);
+  if (baseTowns.size) {
+    log(`towns: +${baseTowns.size} base name(s) from suffixed rows (e.g. "Ballarat East" -> "Ballarat")`);
+  }
 
   // 5. Clean up and pre-rank BEFORE any heavy read: the junk names go first,
   //    duplicates merge, and real towns sort ahead of suburbs. A forced list
@@ -2150,6 +2188,7 @@ module.exports = {
   rankPlaces,
   rankReasonOf,
   preRankPlaces,
+  baseTownSlugs,
   stateFullName,
   nameVariants,
   titleCandidates,
